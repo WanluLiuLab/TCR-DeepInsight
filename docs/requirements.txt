@@ -13,7 +13,7 @@ sphinx_design
 scanpydoc>=0.4.5
 sphinx-autoapi
 nbsphinx
-scatlasvae==1.0.5
+scatlasvae==1.0.4
 faiss-cpu==1.7.2
 transformers==4.17.0
 datasets==1.18.4
