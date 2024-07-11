@@ -18,7 +18,6 @@ pretrained_weights/
 *.h5ad
 *.pkl
 *.fa
-*.json
 *.pkl
 .vscode/
 
