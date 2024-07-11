@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 371 108">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #98c6df;
+      }
+
+      .cls-1, .cls-2, .cls-3, .cls-4, .cls-5, .cls-6 {
+        stroke: #000;
+        stroke-miterlimit: 10;
+      }
+
+      .cls-1, .cls-4, .cls-5, .cls-6 {
+        stroke-width: .1px;
+      }
+
+      .cls-2 {
+        fill: #cedfe1;
+        stroke-width: .4px;
+      }
+
+      .cls-7 {
+        fill: #ebecec;
+      }
+
+      .cls-7, .cls-8, .cls-9, .cls-10, .cls-11, .cls-12, .cls-13, .cls-14, .cls-15, .cls-16, .cls-17 {
+        stroke-width: 0px;
+      }
+
+      .cls-7, .cls-8, .cls-9, .cls-12, .cls-13, .cls-14, .cls-15, .cls-16, .cls-17 {
+        opacity: .8;
+      }
+
+      .cls-18 {
+        font-size: 8.2px;
+      }
+
+      .cls-18, .cls-19, .cls-20 {
+        fill: #231f20;
+      }
+
+      .cls-18, .cls-21, .cls-20 {
+        font-family: ArialMT, Arial;
+      }
+
+      .cls-8 {
+        fill: #c7c6c6;
+      }
+
+      .cls-9 {
+        fill: #3c5ca9;
+      }
+
+      .cls-10, .cls-11, .cls-21, .cls-22 {
+        fill: #000;
+      }
+
+      .cls-11 {
+        filter: url(#drop-shadow-1);
+      }
+
+      .cls-12 {
+        fill: #f79721;
+      }
+
+      .cls-19 {
+        font-family: Arial-ItalicMT, Arial;
+        font-size: 7.03px;
+        font-style: italic;
+      }
+
+      .cls-13 {
+        fill: #158241;
+      }
+
+      .cls-14 {
+        fill: #4265ad;
+      }
+
+      .cls-15 {
+        fill: #e32028;
+      }
+
+      .cls-3 {
+        fill: none;
+      }
+
+      .cls-23 {
+        letter-spacing: -.04em;
+      }
+
+      .cls-16 {
+        fill: #e3e31c;
+      }
+
+      .cls-21 {
+        font-size: 6.97px;
+      }
+
+      .cls-4 {
+        fill: #b0d2e6;
+      }
+
+      .cls-17 {
+        fill: #51c3ca;
+      }
+
+      .cls-20 {
+        font-size: 7.03px;
+      }
+
+      .cls-5 {
+        fill: #9bc6df;
+      }
+
+      .cls-6 {
+        fill: #dae8f4;
+      }
+
+      .cls-22 {
+        font-family: DroidSansMonoForPowerline, 'Droid Sans Mono for Powerline';
+        font-size: 7.75px;
+        letter-spacing: .14em;
+      }
+    </style>
+    <filter id="drop-shadow-1" filterUnits="userSpaceOnUse">
+      <feOffset dx="0" dy="0"/>
+      <feGaussianBlur result="blur" stdDeviation="1"/>
+      <feFlood flood-color="#000" flood-opacity=".75"/>
+      <feComposite in2="blur" operator="in"/>
+      <feComposite in="SourceGraphic"/>
+    </filter>
+  </defs>
+  <rect class="cls-16" x="44.58" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-12" x="50.34" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-13" x="56.1" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-7" x="61.87" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-12" x="67.63" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-7" x="73.39" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-7" x="79.15" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-12" x="84.92" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-17" x="90.68" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-15" x="96.44" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-14" x="102.2" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-13" x="107.97" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-9" x="113.73" y="40.31" width="5.76" height="8.59"/>
+  <rect class="cls-9" x="119.49" y="40.31" width="5.76" height="8.59"/>
+  <text class="cls-22" transform="translate(45.01 47.47)"><tspan x="0" y="0">CSVGTGGTNEKLFF</tspan></text>
+  <text class="cls-21" transform="translate(19.59 46.8)"><tspan x="0" y="0">TR</tspan><tspan class="cls-23" x="9.3" y="0">A</tspan><tspan x="13.63" y="0">V5-</tspan></text>
+  <text class="cls-21" transform="translate(126.68 46.8)"><tspan x="0" y="0">-TRAJ37</tspan></text>
+  <rect class="cls-16" x="53.01" y="51.07" width="5.76" height="8.59"/>
+  <rect class="cls-8" x="58.77" y="51.07" width="5.76" height="8.59"/>
+  <rect class="cls-15" x="64.54" y="51.07" width="5.76" height="8.59"/>
+  <rect class="cls-12" x="70.3" y="51.07" width="5.76" height="8.59"/>
+  <rect class="cls-12" x="76.06" y="51.07" width="5.76" height="8.59"/>
+  <rect class="cls-7" x="81.82" y="51.07" width="5.76" height="8.59"/>
+  <rect class="cls-14" x="87.59" y="51.07" width="5.76" height="8.59"/>
+  <rect class="cls-13" x="93.35" y="51.07" width="5.76" height="8.59"/>
+  <rect class="cls-13" x="99.11" y="51.07" width="5.76" height="8.59"/>
+  <rect class="cls-9" x="104.87" y="51.07" width="5.76" height="8.59"/>
+  <text class="cls-22" transform="translate(53.44 58.23)"><tspan x="0" y="0">CAESTGKLIF</tspan></text>
+  <text class="cls-21" transform="translate(17.63 57.56)"><tspan x="0" y="0">TRBV29-1-</tspan></text>
+  <text class="cls-21" transform="translate(111.87 57.56)"><tspan x="0" y="0">-TRBJ1-4</tspan></text>
+  <rect class="cls-11" x="296.81" y="33.86" width="7.48" height="32.36"/>
+  <g>
+    <rect class="cls-6" x="296.81" y="58.12" width="7.48" height="8.09"/>
+    <rect class="cls-4" x="296.81" y="50.04" width="7.48" height="8.09"/>
+    <rect class="cls-1" x="296.81" y="41.95" width="7.48" height="8.09"/>
+    <rect class="cls-5" x="296.81" y="33.86" width="7.48" height="8.09"/>
+  </g>
+  <rect class="cls-2" x="178.7" y="36.36" width="3.28" height="28.93" rx=".54" ry=".54"/>
+  <text class="cls-19" transform="translate(221.52 53.28)"><tspan x="0" y="0">Pre-trained-BERT</tspan></text>
+  <g>
+    <line class="cls-3" x1="159.91" y1="51.07" x2="168.87" y2="51.07"/>
+    <path class="cls-10" d="M171.29,51.07c-1.14.42-2.55,1.14-3.42,1.9l.69-1.9-.69-1.9c.87.76,2.28,1.48,3.42,1.9Z"/>
+  </g>
+  <g>
+    <line class="cls-3" x1="280.95" y1="51.07" x2="289.91" y2="51.07"/>
+    <path class="cls-10" d="M292.32,51.07c-1.14.42-2.55,1.14-3.42,1.9l.69-1.9-.69-1.9c.87.76,2.28,1.48,3.42,1.9Z"/>
+  </g>
+  <text class="cls-20" transform="translate(310.03 53.28)"><tspan x="0" y="0">TCR embedding</tspan></text>
+  <rect class="cls-2" x="184.1" y="36.36" width="3.28" height="28.93" rx=".54" ry=".54"/>
+  <rect class="cls-2" x="189.74" y="36.36" width="3.28" height="28.93" rx=".54" ry=".54"/>
+  <rect class="cls-2" x="204.52" y="36.36" width="3.28" height="28.93" rx=".54" ry=".54"/>
+  <rect class="cls-2" x="210.06" y="36.36" width="3.28" height="28.93" rx=".54" ry=".54"/>
+  <rect class="cls-2" x="215.47" y="36.36" width="3.28" height="28.93" rx=".54" ry=".54"/>
+  <text class="cls-18" transform="translate(195.29 51.35)"><tspan x="0" y="0">...</tspan></text>
+</svg>

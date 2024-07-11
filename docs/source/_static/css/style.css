@@ -1,0 +1,63 @@
+h1, h2, h3, h4, h5, h6 {
+    margin-top: 16px;
+}
+
+.output_area img {
+    max-width: 500px !important;
+}
+
+.rst-content code.literal {
+    color: #218378 !important;
+    font-size: 10pt;
+}
+
+。toctree-l3 .docutils .literal {
+    font-size: 14pt;
+}
+
+.wy-nav-content a {
+    color: #218352 !important;
+}
+
+.wy-nav-content a:hover {
+    color: #55be89 !important;
+}
+
+.wy-nav-side {
+    background: #343131 !important;
+}
+
+.wy-nav-content {
+    max-width: 60vw !important;
+}
+
+.wy-side-nav-search {
+    background-color: #002143 !important;
+}
+
+.rst-content .note .admonition-title {
+    background: #297922 !important;
+}
+
+.rst-content .note {
+    background: #E8FAE7 !important
+}
+
+.input_area .highlight {
+    background-color: #fdfdea !important;
+    border-color: #9fe4c2 !important;
+}
+
+.highlight {
+    background-color: #F3F3F3;
+}
+
+.highlight pre {
+    font-size: 10pt !important;
+}
+
+.rst-content div[class^=highlight] div[class^=highlight],
+.rst-content pre.literal-block div[class^=highlight] {
+    border: solid !important;
+    border-width: 1px !important;
+}
