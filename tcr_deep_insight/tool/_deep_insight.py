@@ -1065,7 +1065,7 @@ def _cluster_tcr_by_label_core(
         # result_tcr = result_tcr[result_tcr['mean_distance'] > 1e-3]
 
         result_tcr["disease_association_score"] = result_tcr["distance_difference"]
-        result_tcr["tcr_similarity_score"] = result_tcr["mean_distance"]
+        result_tcr["tcr_convergence_score"] = result_tcr["mean_distance"]
 
         if calculate_tcr_gex_distance:
             a = time.time()

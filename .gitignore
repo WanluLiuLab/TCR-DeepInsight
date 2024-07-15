@@ -24,6 +24,7 @@ pretrained_weights/
 # Distribution / packaging
 .Python
 scripts/
+jupyter_notebooks/
 build/
 pickle/
 pickles/

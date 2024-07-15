@@ -115,7 +115,12 @@ class TDIResult:
         ))
         
 
-    def save_to_disk(self, save_path, save_tcr_data=True, save_gex_data=True):
+    def save_to_disk(self, 
+        save_path, 
+        save_cluster_result_as_csv=True,
+        save_tcr_data=True, 
+        save_gex_data=True
+    ):
         """
         Save the cluster result to disk
 
@@ -132,6 +137,19 @@ class TDIResult:
             self._gex_adata.write_h5ad(os.path.join(save_path, 'gex_data.h5ad'))
         if self.faiss_index is not None:
             faiss.write_index(self.faiss_index, os.path.join(save_path, 'faiss_index.faiss'))
+        if save_cluster_result_as_csv:
+            cluster_tcr = self.to_pandas_dataframe_tcr()
+            cluster_index = self.to_pandas_dataframe_cluster_index()
+            cluster_tcr.to_csv(os.path.join(
+                save_path,
+                'cluster_tcr.csv',
+                index=False
+            ))
+            cluster_index.to_csv(os.path.join(
+                save_path,
+                'cluster_index.csv',
+                index=False
+            ))
 
     @classmethod
     def load_from_disk(
@@ -218,7 +236,7 @@ class TDIResult:
             additional_label_key_values=additional_label_key_values
         )
     
-    def to_pandas_dataframe(self):
+    def to_pandas_dataframe_tcr(self):
         """
         Convert the cluster result to a pandas dataframe
 
@@ -247,6 +265,8 @@ class TDIResult:
             df['cluster_index'] = FLATTEN(cluster_indices)
         return df
 
+    def to_pandas_dataframe_cluster_index(self):
+        return self.data.obs.loc[:,['cluster_index'] + list(filter(lambda x: x not in ['cluster_index','TCRab'], self.data.obs.columns))]
 
     def _get_tcrs_for_cluster(
         self, 
