@@ -32,6 +32,9 @@ if not within_flit():  # see function docstring on why this is there
     from . import utils as ut
     from . import data as data
 
+    from .utils._definitions import SPECIES
+    from .utils._tcr import TCR
+
     from .tool._deep_insight_result import TDIResult
 
     load_tdi_result = TDIResult.load_from_disk
@@ -53,3 +56,4 @@ if not within_flit():  # see function docstring on why this is there
     import sys
     sys.modules.update({f'{__name__}.{m}': globals()[m] for m in ['model', 'tl', 'pp', 'pl', 'ut', 'data']})
     del sys
+

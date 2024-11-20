@@ -1,7 +1,9 @@
-from typing import Tuple
+from typing import Mapping, Tuple, Union, Optional, get_origin, get_args
 import functools 
 import warnings
 import inspect
+import collections
+
 
 def deprecated(*, ymd: Tuple[int] = None, optional_message: str = None):
     def decorate(func):
@@ -16,16 +18,30 @@ def deprecated(*, ymd: Tuple[int] = None, optional_message: str = None):
         return wrapper 
     return decorate
 
-def ignore_warning(level='ignore'):
-    def decorate(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            with warnings.catch_warnings():
-                warnings.simplefilter(level)
-                return func(*args, **kwargs)
-        return wrapper
-    return decorate
-        
+def is_instance_of_type(value, expected_type):
+    """Check if a value is an instance of the expected type, accounting for Optional."""
+    # Handle Optional (which is Union[T, None])
+    if get_origin(expected_type) is Union:
+        allowed_types = get_args(expected_type)
+        return any(is_instance_of_type(value, t) for t in allowed_types)
+    elif get_origin(expected_type) is Optional:
+        allowed_types = get_args(expected_type)
+        return value is None or any([is_instance_of_type(value, t) for t in allowed_types])
+    elif  get_origin(expected_type) is collections.abc.Mapping:
+        return isinstance(value, dict) and all(
+            is_instance_of_type(k, expected_type.__args__[0])
+            and is_instance_of_type(v, expected_type.__args__[1])
+            for k, v in value.items()
+        )
+    elif get_origin(expected_type) is list:
+        return isinstance(value, list) and all(
+            is_instance_of_type(v, expected_type.__args__[0])
+            for v in value
+        )
+    
+    return isinstance(value, expected_type)
+
+
 def typed(types: dict = None, *, optional_message: str = None):
     def decorate(func):
         arg_names = inspect.getfullargspec(func)[0]
@@ -33,16 +49,16 @@ def typed(types: dict = None, *, optional_message: str = None):
         def wrapper(*args,**kwargs):
             if types:
                 for name, arg in zip(arg_names, args):
-                    if name in types and not isinstance(arg, types[name]):
+                    if name in types and not is_instance_of_type(arg, types[name]):
                         raise TypeError("Argument {} must be {}".format(name, types[name]))
                 for name, arg in kwargs.items():
-                    if name in types and not isinstance(arg, types[name]):
+                    if name in types and not is_instance_of_type(arg, types[name]):
                         raise TypeError("Argument {} must be {}".format(name, types[name]))
             return func(*args, **kwargs)
         return wrapper
     return decorate
-                
-                
+
+
 def timed(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -53,3 +69,29 @@ def timed(func):
         print("Function {} took {} seconds to execute".format(func.__name__, end - start))
         return result
     return wrapper
+
+def memorize(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        if args not in wrapper.cache:
+            wrapper.cache[args] = func(*args, **kwargs)
+        return wrapper.cache[args]
+    wrapper.cache = {}
+    return wrapper
+
+def count_calls(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        wrapper.num_calls += 1
+        print("Call {} of {}".format(wrapper.num_calls, func.__name__))
+        return func(*args, **kwargs)
+    wrapper.num_calls = 0
+    return wrapper
+
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self
+
+    def __getattr__(self, attr):
+        return self.get(attr)

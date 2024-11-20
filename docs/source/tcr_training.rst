@@ -3,12 +3,17 @@ Training T cell receptor alpha and beta chains (TCRαβ) seqeunce by BERT
 
 This is a tutorial for training TCR sequence by BERT. We use the huARdb v2 reference dataset as an example.
 
+
+Load the reference dataset
+--------------------------
+
 .. code-block:: python
   :linenos:
   
   import tcr_deep_insight as tdi
   import torch 
   
+  # Load the human gex reference dataset
   gex_reference_adata = tdi.data.human_gex_reference_v2()
 
   # Update the anndata object
@@ -27,6 +32,13 @@ This is a tutorial for training TCR sequence by BERT. We use the huARdb v2 refer
 
   # convert the adata object to dataset.Dataset object
   tcr_dataset = tdi.tl.tcr_adata_to_datasets(tcr_reference_adata)
+
+
+Training the TCR sequence by BERT
+---------------------------------
+
+.. code-block:: python
+  :linenos:
 
   # create a TCR BERT model for training
   tcr_model = tdi.model.TRabModelingBertForPseudoSequence(
@@ -73,12 +85,14 @@ We can obtain the TCR sequence embedding by the following code:
 .. code-block:: python
   :linenos:
   
+  # This will add 'X_tcr' and 'X_tcr_pca' to the adata object
+  # If the code is run in first time, it will save the pca model to the pca_path
+  # If the pca model is already saved, it will load the pca model from the pca_path
   tdi.tl.get_pretrained_tcr_embedding(
     tcr_adata=tcr_reference_adata,
     bert_config=tdi.model.config.get_human_config(),
     checkpoint_path='./tcr_deep_insight/data/pretrained_weights/human_bert_pseudosequence.tcr_v2.ckpt',
     pca_path='./tcr_deep_insight/data/pretrained_weights/human_bert_pseudosequence_pca.tcr_v2.pkl',
-    use_pca=True,
-    encoding='cdr123',
+    use_pca=True
   )
 

@@ -1,5 +1,62 @@
 #!/usr/bin/env python3
 import pandas as pd 
+from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.pyplot as plt
+import numpy as np
+
+def rgb2hex(vals, rgbtype=1):
+    """
+    Converts RGB values in a variety of formats to Hex values.
+
+    :param vals: A list of RGB values
+    :param rgbtype: The type of RGB values that are being passed. This can be in the form of 1 (0-1) or 256 (0-255)
+    :return: A hex string in the form '#RRGGBB'
+    """
+
+    if len(vals) != 3 and len(vals) != 4:
+        raise Exception(
+            "RGB or RGBA inputs to rgb2hex must have three or four elements!")
+    if rgbtype != 1 and rgbtype != 256:
+        raise Exception("rgbtype must be 1 or 256!")
+
+    # Convert from 0-1 RGB/RGBA to 0-255 RGB/RGBA
+    if rgbtype == 1:
+        vals = [255*x for x in vals]
+
+    # Ensure values are rounded integers, convert to hex, and concatenate
+    return '#' + ''.join(['{:02X}'.format(int(round(x))) for x in vals])
+
+def hex2rgb(val):
+    """
+    Converts Hex values to RGB values.
+
+    :param val: A hex string in the form '#RRGGBB'
+    :return: A list of RGB values
+    """
+
+    # Strip the hash if necessary
+    if val[0] == '#':
+        val = val[1:]
+
+    # Convert hex to RGB
+    return [int(val[i:i + 2], 16) for i in (0, 2, 4)]
+
+def make_colormap(colors, show_palette=False, name=""):
+    color_ramp = LinearSegmentedColormap.from_list(
+        name, [hex2rgb(c1) for c1 in colors]
+    )
+    if show_palette:
+        plt.figure(figsize=(15, 3))
+        plt.imshow(
+            [list(np.arange(0, len(colors), 0.1))],
+            interpolation="nearest",
+            origin="lower",
+            cmap=color_ramp,
+        )
+        plt.xticks([])
+        plt.yticks([])
+    return color_ramp
+
 
 huardb_annotation_low_cmap = {
     'CD4': '#1c83c5ff',

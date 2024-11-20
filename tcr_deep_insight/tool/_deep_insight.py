@@ -26,6 +26,7 @@ from pathlib import Path
 import warnings
 import tqdm
 import umap
+from functools import partial
 from transformers import (
     BertConfig,
     PreTrainedModel,
@@ -34,15 +35,18 @@ from transformers import (
 
 from scatlasvae.model._primitives import *
 from scatlasvae.utils._tensor_utils import one_hot, get_k_elements
-from scatlasvae.utils._decorators import typed, deprecated
 from scatlasvae.utils._loss import LossFunction
 from scatlasvae.utils._parallelizer import Parallelizer
+
+from joblib import Parallel, delayed
 
 # TCR Deep Insight
 from ._deep_insight_result import TDIResult
 from ..utils._compat import Literal
+from ..utils._decorators import typed
+from ..utils._definitions import SPECIES
 from ..model import GEXModelingVAE
-from ..utils._tcr_definitions import TCR, _get_hla_pseudo_sequence
+from ..utils._tcr_definitions import TCRConstructor, _get_hla_pseudo_sequence
 from ..model.modeling_bert._model import (
     TRabModelingBertForVJCDR3,
     TRabModelingBertForPseudoSequence
@@ -58,31 +62,40 @@ from ..model._model_utils import partial_load_state_dict
 from ..model.modeling_bert._config import get_config, get_human_config, get_mouse_config
 from ..utils._compat import Literal
 from ..utils._logger import mt, mw, get_tqdm
-from ..utils._utilities import random_subset_by_key, euclidean
-
-from ..utils._definitions import (
+from ..utils._utilities import partition, tqdm_joblib
+from ..utils._tcr import TCR
+from ..utils._tcr_definitions import (
     TRA_DEFINITION_ORIG,
     TRAB_DEFINITION_ORIG,
     TRB_DEFINITION_ORIG,
     TRA_DEFINITION,
     TRAB_DEFINITION,
     TRB_DEFINITION,
+    TCRAnnotations
 )
 from ..utils._logger import mt
 from ..utils._utilities import default_aggrf, default_pure_criteria
 from ..utils._utilities import nearest_neighbor_eucliean_distances
 
-from ._constants import FAISS_INDEX_BACKEND 
+from ..model._constants import (
+    TCR_BERT_ENCODING,
+    TCR_BERT_POOLING,
+)
+from ._constants import (
+    FAISS_INDEX_BACKEND,
+)
+from ..utils._definitions import SPECIES
 
 MODULE_PATH = Path(__file__).parent
 warnings.filterwarnings("ignore")
 
-
 @typed({
     "df": pd.DataFrame,
+    "species": Literal["human", "mouse"]
 })
 def add_tcr_pseudosequence_to_dataframe(
     df: pd.DataFrame,
+    species: bool = SPECIES.HUMAN
 ) -> None:
     """
     Add TCR pseudosequence to dataframe
@@ -90,27 +103,51 @@ def add_tcr_pseudosequence_to_dataframe(
     :param df: dataframe
 
     :note:
-        This method modifies the `df` inplace and adds the following columns:
+        This method modifies the df inplace and adds the following columns:
             - tcr_pseudosequence
     """
+
+    # Check if all columns are present
     for i in ["TRAV", "TRAJ", "TRBV", "TRBJ", "CDR3a", "CDR3b"]:
         if i not in df.columns:
             raise ValueError(f"Column {i} not found in adata.obs.columns")
-    df['tcr_pseudosequence'] = [TCR(
-        alpha_v_gene=trav,
-        alpha_j_gene=traj,
-        beta_v_gene=trbv,
-        beta_j_gene=trbj,
-        alpha_cdr3=cdr3a,
-        beta_cdr3=cdr3b,
-    ).pseudo_sequence() for trav, traj, trbv, trbj, cdr3a, cdr3b in zip(
-        df["TRAV"],
-        df["TRAJ"],
-        df["TRBV"],
-        df["TRBJ"],
-        df["CDR3a"],
-        df["CDR3b"],
-    )]
+    # Check if all TRAV, TRAJ, TRBV, TRBJ genes are valid
+    all_trav = np.unique(df["TRAV"])
+    not_found = list(filter(lambda x: x not in getattr(TCRAnnotations, species).TRAV_KEYS, all_trav))
+    if len(not_found) > 0:
+        raise ValueError(f"Not all TRAV genes are valid for {species}. Found {not_found}")
+    all_traj = np.unique(df["TRAJ"])
+    not_found = list(filter(lambda x: x not in getattr(TCRAnnotations, species).TRAJ_KEYS, all_traj))
+    if len(not_found) > 0:
+        raise ValueError(f"Not all TRAJ genes are valid for {species}. Found {not_found}")
+    all_trbv = np.unique(df["TRBV"])
+    not_found = list(filter(lambda x: x not in getattr(TCRAnnotations, species).TRBV_KEYS, all_trbv))
+    if len(not_found) > 0:
+        raise ValueError(f"Not all TRBV genes are valid for {species}. Found {not_found}")
+    all_trbj = np.unique(df["TRBJ"])
+    not_found = list(filter(lambda x: x not in getattr(TCRAnnotations, species).TRBJ_KEYS, all_trbj))
+    if len(not_found) > 0:
+        raise ValueError(f"Not all TRBJ genes are valid for {species}. Found {not_found}")
+
+    df["tcr_pseudosequence"] = [
+        TCRConstructor(
+            alpha_v_gene=trav,
+            alpha_j_gene=traj,
+            beta_v_gene=trbv,
+            beta_j_gene=trbj,
+            alpha_cdr3=cdr3a,
+            beta_cdr3=cdr3b,
+            species=species,
+        ).pseudo_sequence()
+        for trav, traj, trbv, trbj, cdr3a, cdr3b in zip(
+            df["TRAV"],
+            df["TRAJ"],
+            df["TRBV"],
+            df["TRBJ"],
+            df["CDR3a"],
+            df["CDR3b"],
+        )
+    ]
 
 @typed({
     "df": pd.DataFrame,
@@ -149,6 +186,7 @@ def tcr_adata_to_datasets(
 ) -> datasets.arrow_dataset.Dataset:
     """
     Convert adata to tcr datasets
+
     :param adata: AnnData
     :param tokenizer: tokenizer
     :return: tcr datasets
@@ -181,7 +219,6 @@ def tcr_adata_to_datasets(
         raise ValueError("Invalid tokenizer")
     return tcr_dataset
 
-
 def tcr_dataframe_to_datasets(
     df: pd.DataFrame,
     tokenizer: Union[TRabTokenizerForVJCDR3, TRabTokenizerForPseudoSequence],
@@ -189,8 +226,10 @@ def tcr_dataframe_to_datasets(
 ) -> datasets.arrow_dataset.Dataset :
     """
     Convert dataframe to tcr datasets
+
     :param df: dataframe
     :param tokenizer: tokenizer
+    
     :return: tcr datasets
     """
     for i in ['TRAV', 'TRAJ', 'TRBV', 'TRBJ', 'CDR3a', 'CDR3b']:
@@ -234,6 +273,7 @@ def to_embedding_tcr_only(
 ) -> np.ndarray:
     """
     Get embedding from model
+
     :param model: nn.Module. The TCR model.
     :param tcr_dataset: datasets.arrow_dataset.Dataset. evaluation datasets.
     :param k: str. 'hidden_states' or 'last_hidden_state'. 
@@ -297,21 +337,20 @@ def to_embedding_tcr_only(
     all_embedding = np.vstack(all_embedding)
     return all_embedding
 
-
 def to_embedding_tcr_only_from_pandas(
     model: Union[TRabModelingBertForVJCDR3, TRabModelingBertForPseudoSequence],
     df: pd.DataFrame,
     tokenizer: Union[TRabTokenizerForVJCDR3, TRabTokenizerForPseudoSequence],
-    device,
-    n_per_batch=64,
-    pooling: Literal["cls", "mean", "max", "pool", "trb", "tra", "weighted"] = "mean",
+    device: str,
+    n_per_batch: int = 64,
+    pooling: TCR_BERT_POOLING = TCR_BERT_POOLING.MEAN
 ):
     original_pooling = None
     if pooling != model.pooling:
         original_pooling = model.pooling
         model.pooling = pooling
     if isinstance(model, TRabModelingBertForPseudoSequence):
-        if pooling in [ "pool", "trb", "tra", "weighted"]:
+        if pooling in [ "pool", "weighted"]:
             raise ValueError("Pooling method not supported for pseudo sequence")
         
     all_embedding = []
@@ -327,19 +366,20 @@ def to_embedding_tcr_only_from_pandas(
         model.pooling = original_pooling
     return np.vstack(all_embedding)
 
+
 def get_pretrained_tcr_embedding(
-    tcr_adata: sc.AnnData, 
+    tcr_adata: sc.AnnData,
     bert_config: Mapping[str, Any],
-    encoding: Literal['vjcdr3','cdr123'] = 'cdr123',
-    pooling: Literal["cls", "mean", "max", "pool", "trb", "tra", "weighted"] = "mean",
-    species: Literal['human','mouse'] = 'human',
-    checkpoint_path=os.path.join(MODULE_PATH, '../data/pretrained_weights/bert_tcr_768.ckpt'),
-    pca_path: Optional[str] = None, 
-    use_pca:bool=True, 
+    checkpoint_path: Union[str, os.PathLike],
+    encoding: TCR_BERT_ENCODING = TCR_BERT_ENCODING.VJCDR3,
+    pooling: TCR_BERT_POOLING = TCR_BERT_POOLING.MEAN,
+    species: Literal["human", "mouse"] = "human",
+    pca_path: Optional[str] = None,
+    use_pca: bool = True,
     use_kernel_pca: bool = False,
     use_faiss_pca: bool = True,
     pca_n_components: int = 50,
-    device='cuda:0',
+    device: str = "cuda:0",
     n_per_batch: int = 256,
 ):
     """
@@ -352,22 +392,22 @@ def get_pretrained_tcr_embedding(
 
     :param tcr_adata: AnnData object containing TCR data
     :param bert_config: BERT config
-    :param encoding: Encoding type. Default: 'cdr123'.
-    :param pooling: Pooling method. Default: 'mean'
-    :param species: Species. Default: 'human'
-    :param checkpoint_path: Path to pretrained BERT model. Default: None
-    :param pca_path: Path to PCA model, if previously saved. Default: None
+    :param checkpoint_path: Path to pretrained BERT model.
+    :param encoding: Encoding type of tcr sequence.
+    :param pooling: Pooling method for tcr representation.
+    :param species: Species.
+    :param pca_path: Path to PCA model, if previously saved.
     :param use_pca: Whether to use PCA. Default: True
-    :param use_kernel_pca: Whether to use Kernel PCA. High memory required for large dataset. Default: False
-    :param use_faiss_pca: Whether to use Faiss PCA instead fo scikit-learn. Default: True
-    :param pca_n_components: Number of PCA components. Default: 50
-    :param device: Device for Faiss PCA. Default: 'cuda:0'
-    :param n_per_batch: Number of samples per batch in getting TCR embeddings. Default: 256
+    :param use_kernel_pca: Whether to use Kernel PCA. High memory required for large dataset. 
+    :param use_faiss_pca: Whether to use Faiss PCA instead fo scikit-learn.
+    :param pca_n_components: Number of PCA components.
+    :param device: Device for Faiss PCA computation.
+    :param n_per_batch: Number of samples per batch in getting TCR embeddings.
     
     """
     mt("Building BERT model")
 
-    if encoding == 'vjcdr3':
+    if encoding == TCR_BERT_ENCODING.VJCDR3:
         tcr_tokenizer = TRabTokenizerForVJCDR3(
             tra_max_length=48, 
             trb_max_length=48,
@@ -391,14 +431,13 @@ def get_pretrained_tcr_embedding(
 
     else:
         raise ValueError("Invalid encoding")
-    
+
     mt("Loading BERT model checkpoints...")
     try:
         partial_load_state_dict(tcr_model, torch.load(checkpoint_path, map_location=device))
     except RuntimeError as e:
         mt("Failed to load the full pretrained BERT model. Please make sure the checkpoint path is correct.")
 
-    
     mt("Computing TCR Embeddings...")
     all_embedding = to_embedding_tcr_only_from_pandas(
         tcr_model,
@@ -418,7 +457,7 @@ def get_pretrained_tcr_embedding(
             assert(isinstance(pca, faiss.PCAMatrix), "PCA model is not a Faiss PCA model")
         else:
             assert(isinstance(pca, PCA), "PCA model is not a PCA model")
-            
+
         mt("Performing PCA...")
         if use_faiss_pca:
             all_embedding_pca = pca.apply(all_embedding)
@@ -447,10 +486,15 @@ def get_pretrained_tcr_embedding(
     else:
         all_embedding_pca = all_embedding
 
-
     tcr_adata.obsm["X_tcr"] = all_embedding
     tcr_adata.obsm["X_tcr_pca"] = all_embedding_pca
 
+
+@typed({
+    "tcr_adata": sc.AnnData,
+    "layer_norm": bool,
+    "use_gex": bool,
+})
 def _prepare_tcr_embedding(
     tcr_adata: sc.AnnData,
     layer_norm: bool = True,
@@ -482,37 +526,51 @@ def _prepare_tcr_embedding(
             ])
     return all_tcr_gex_embedding, X_tcr_pca.shape[1], X_gex.shape[1]
 
-
 def cluster_tcr(
     tcr_adata: sc.AnnData,
     label_key: str = None,  
     include_hla_keys: Optional[Iterable[str]] = None,
-    gpu=0,
+    use_gpu: bool = False,
+    gpu: int = 0,
     pure_label: bool = True,
     pure_criteria: Callable = default_pure_criteria,
+    same_trav: bool = False,
+    same_trbv: bool = False,
+    same_cdr3a_length: bool = False,
+    same_cdr3b_length: bool = False,
     layer_norm: bool = True,
-    max_distance: float = 3,
+    max_distance: float = 4.,
     max_cluster_size: int = 40,
     use_gex: bool = True,
     filter_intersection_fraction: float = 0.7,
-    k: int = -1
-):
+    nk: int = -1,
+    n_jobs: int = 1,
+    species: SPECIES = SPECIES.HUMAN,
+    faiss_index_backend: FAISS_INDEX_BACKEND = FAISS_INDEX_BACKEND.KMEANS
+) -> TDIResult:
     """
     Cluster TCRs by joint TCR-GEX embedding.
 
     :param tcr_adata: AnnData object containing TCR data
-    :param label_key: Key of the label to cluster
-    :param gpu: GPU ID. Default: 0
-    :param pure_label: Whether to use pure label. Default: True
-    :param pure_criteria: Pure criteria. Default: default_pure_criteria
-    :param layer_norm: Whether to use LayerNorm. Default: True
-    :param max_distance: Maximum distance. Default: 25
-    :param max_cluster_size: Maximum cluster size for dTCR clusters. Default: 40
-    :param use_gex: Whether to use GEX embedding. Default: True
-    :param filter_intersection_fraction: Filter intersection fraction. Default: 0.7
-    :param k: Number of nearest neighbors for background. Default: -1, which means background neighbors equal to cluster size
+    :param label_key: Key of the label to cluster. Should be in `tcr_adata.obs`
+    :param use_gpu: Whether to use GPU.
+    :param gpu: GPU ID if use_gpu.
+    :param pure_label: Whether to constrain all TCRs in a cluster to have the same label.
+    :param pure_criteria: Pure criteria. A function that takes two arguments: a list of labels and a label to check if the list satisfies the criteria.
+    :param same_trav: Whether to constrain all TCRs in a cluster to have the same TRAV gene.
+    :param same_trbv: Whether to constrain all TCRs in a cluster to have the same TRBV gene.
+    :param same_cdr3a_length: Whether to constrain all TCRs in a cluster to have the same CDR3a length.
+    :param same_cdr3b_length: Whether to constrain all TCRs in a cluster to have the same CDR3b length.
+    :param layer_norm: Whether to use LayerNorm on tcr embedding. Default: True
+    :param max_distance: Maximum TrGx distance. Default: 4.
+    :param max_cluster_size: Maximum cluster size for dTCR clusters.
+    :param use_gex: Whether to use GEX embedding for clustering. 
+    :param filter_intersection_fraction: Filter intersection fraction in pruning clusters that contain overlapping TCRs. 
+    :param nk: Number of nearest neighbors for background comparison. Default: -1, which means background neighbors equal to cluster size
+    :param n_jobs: Number of threads for parallel processing.
+    :param faiss_index_backend: Faiss index backend. Default: KMEANS
 
-    :return: sc.AnnData containing clustered TCRs.
+    :return: TDIResult containing clustered TCRs.
 
     .. note::
         The `gpu` parameter indicates GPU to use for clustering. If `gpu` is 0, CPU is used.
@@ -534,10 +592,18 @@ def cluster_tcr(
         gpu=gpu,
         pure_label=pure_label,
         pure_criteria=pure_criteria,
+        same_trav=same_trav,
+        same_trbv=same_trbv,
+        same_cdr3a_length=same_cdr3a_length,
+        same_cdr3b_length=same_cdr3b_length,
         max_distance=max_distance,
         max_cluster_size=max_cluster_size,
-        k=k,
+        nk=nk,
         filter_intersection_fraction=filter_intersection_fraction,
+        use_gpu=use_gpu,
+        n_jobs=n_jobs,
+        species=species,
+        faiss_index_backend=faiss_index_backend
     )
     return result
 
@@ -546,30 +612,47 @@ def cluster_tcr_from_reference(
     tcr_reference_adata: sc.AnnData,
     label_key: str = None,  
     include_hla_keys: Optional[Iterable[str]] = None,
+    use_gpu=False,
     gpu=0,
     layer_norm: bool = True,
     pure_label: bool = True,
     pure_criteria: Callable = default_pure_criteria,
+    same_trav: bool = False,
+    same_trbv: bool = False,
+    same_cdr3a_length: bool = False,
+    same_cdr3b_length: bool = False,
     max_distance:float = 3.,
     max_cluster_size: int = 40,
     use_gex: bool = True,
     filter_intersection_fraction: float = 0.7,
-    k: int = -1
+    nk: int = -1,
+    n_jobs: int = 1,
+    species: SPECIES = SPECIES.HUMAN,
+    faiss_index_backend: FAISS_INDEX_BACKEND = FAISS_INDEX_BACKEND.KMEANS
 ) -> TDIResult:
     """
     Cluster TCRs from reference. 
 
     :param tcr_adata: AnnData object containing TCR data
     :param tcr_reference_adata: AnnData object containing reference TCR data
-    :param label_key: Key of the label to use for clustering
-    :param reference_path: Path to reference TCR data. Default: None
-    :param gpu: GPU to use. Default: 0
-    :param layer_norm: Whether to use LayerNorm. Default: True
-    :param max_distance: Maximum distance of the most dissimilar TCR in a dTCR cluster . Default: 25
-    :param max_cluster_size: Maximum cluster size for dTCR clusters. Default: 40
-    :param use_gex: Whether to use GEX embedding. Default: True
-    :param filter_intersection_fraction: Filter intersection fraction. Default: 0.7
-    :param k: Number of nearest neighbors for background. Default: -1, which means background neighbors equal to cluster size
+    :param label_key: Key of the label to cluster. Should be in `tcr_adata.obs`
+    :param use_gpu: Whether to use GPU.
+    :param gpu: GPU ID if use_gpu.
+    :param pure_label: Whether to constrain all TCRs in a cluster to have the same label.
+    :param pure_criteria: Pure criteria. A function that takes two arguments: a list of labels and a label to check if the list satisfies the criteria.
+    :param same_trav: Whether to constrain all TCRs in a cluster to have the same TRAV gene.
+    :param same_trbv: Whether to constrain all TCRs in a cluster to have the same TRBV gene.
+    :param same_cdr3a_length: Whether to constrain all TCRs in a cluster to have the same CDR3a length.
+    :param same_cdr3b_length: Whether to constrain all TCRs in a cluster to have the same CDR3b length.
+    :param layer_norm: Whether to use LayerNorm on tcr embedding. Default: True
+    :param max_distance: Maximum TrGx distance. Default: 4.
+    :param max_cluster_size: Maximum cluster size for dTCR clusters.
+    :param use_gex: Whether to use GEX embedding for clustering. 
+    :param filter_intersection_fraction: Filter intersection fraction in pruning clusters that contain overlapping TCRs. 
+    :param nk: Number of nearest neighbors for background comparison. Default: -1, which means background neighbors equal to cluster size
+    :param species: Species name.
+    :param n_jobs: Number of threads for parallel processing. Default: 1
+
 
     :return: TDIResult object containing clustered TCRs.
 
@@ -577,16 +660,14 @@ def cluster_tcr_from_reference(
         The `gpu` parameter indicates GPU to use for clustering. If `gpu` is 0, CPU is used.
     
     """
-    all_tcr_gex_embedding_reference, tcr_dim, gex_dim = _prepare_tcr_embedding(
-        tcr_reference_adata,
+    tcr_data_merged = sc.concat([tcr_reference_adata, tcr_adata])
+    all_tcr_gex_embedding_merged, tcr_dim, gex_dim = _prepare_tcr_embedding(
+        tcr_data_merged,
         layer_norm=layer_norm,
         use_gex=use_gex
     )
-    all_tcr_gex_embedding_query, tcr_dim, gex_dim = _prepare_tcr_embedding(
-        tcr_adata,
-        layer_norm=layer_norm,
-        use_gex=use_gex
-    )
+    all_tcr_gex_embedding_reference = all_tcr_gex_embedding_merged[:len(tcr_reference_adata)]
+    all_tcr_gex_embedding_query = all_tcr_gex_embedding_merged[len(tcr_reference_adata):]
 
     df = pd.concat([
         tcr_reference_adata.obs,
@@ -607,54 +688,75 @@ def cluster_tcr_from_reference(
         gpu=gpu,
         pure_label=pure_label,
         pure_criteria=pure_criteria,
+        same_trav=same_trav,
+        same_trbv=same_trbv,
+        same_cdr3a_length=same_cdr3a_length,
+        same_cdr3b_length=same_cdr3b_length,
         max_distance=max_distance,
         max_cluster_size=max_cluster_size,
-        k=k,
+        nk=nk,
         filter_intersection_fraction=filter_intersection_fraction,
+        use_gpu=use_gpu,
+        n_jobs=n_jobs,
+        species=species,
+        faiss_index_backend=faiss_index_backend
     )
     return result
 
 
-@typed(
-    {
-        "df": pd.DataFrame,
-        "all_tcr_gex_embedding": np.ndarray,
-        "query_tcr_gex_embedding": np.ndarray,
-        "tcr_dim": int,
-        "gex_dim": int,
-        "label_key": str,
-        "gpu": int,
-        "pure_label": bool,
-        "pure_criteria": Callable,
-        "calculate_tcr_gex_distance": bool,
-        "max_distance": float,
-        "max_cluster_size": int,
-    }
-)
+@typed({
+    "df": pd.DataFrame,
+    "all_tcr_gex_embedding": np.ndarray,
+    "query_tcr_gex_embedding": np.ndarray,
+    "tcr_dim": int,
+    "gex_dim": int,
+    "label_key": Optional[str],
+    "gpu": int,
+    "pure_label": bool,
+    "pure_criteria": Callable,
+    "calculate_tcr_gex_distance": bool,
+    "max_distance": float,
+    "max_cluster_size": int,
+    "include_hla_keys": Optional[Mapping[str, List[str]]],
+    "n_jobs": int,
+    "nk": int,
+    "filter_intersection_fraction": float,
+    "low_memory": bool,
+})
 def _cluster_tcr_by_label_core(
-    df,
+    df: pd.DataFrame,
     *,
-    all_tcr_gex_embedding,
-    query_tcr_gex_embedding,
-    tcr_dim,
-    gex_dim,
-    label_key=None,
+    all_tcr_gex_embedding: np.ndarray,
+    query_tcr_gex_embedding: np.ndarray,
+    tcr_dim: int,
+    gex_dim: int,
+    label_key: str = None,
     include_hla_keys: Optional[List[str]] = None,
     use_gpu: bool = False,
-    gpu=0,
+    gpu: int = 0,
     pure_label: bool = True,
-    pure_criteria: Callable = lambda x, z: Counter(x).most_common()[0][1] / len(x) > 0.7
-    and Counter(x).most_common()[0][0] == z,
-    max_distance=3,
-    max_cluster_size=40,
+    pure_criteria: Callable = default_pure_criteria,
+    same_trbv: bool = False,
+    same_trav: bool = False,
+    same_cdr3a_length = False,
+    same_cdr3b_length = False, 
+    max_distance: float = 4.,
+    max_cluster_size: int = 40,
     calculate_tcr_gex_distance: bool = False,
     n_jobs: int = 1,
-    k: int = -1,
+    nk: int = -1,
     filter_intersection_fraction: float = 0.7,
     low_memory: bool = False,
+    species: SPECIES = SPECIES.HUMAN,
     faiss_index_backend: FAISS_INDEX_BACKEND = FAISS_INDEX_BACKEND.KMEANS
 ) -> TDIResult:
-    mt("Building Faiss index")
+    if include_hla_keys is not None:
+        for v in include_hla_keys.values():
+            for k in v:
+                if k not in df.columns:
+                    raise ValueError(f"Column {k} not found in dataframe columns")
+
+    mt("Building Faiss index" + f"using GPU{gpu}" if use_gpu else "Using CPU")
     all_tcr_gex_embedding = all_tcr_gex_embedding.astype(np.float32)
     query_tcr_gex_embedding = query_tcr_gex_embedding.astype(np.float32)
 
@@ -667,6 +769,7 @@ def _cluster_tcr_by_label_core(
                 verbose=True,
                 gpu=gpu
             )
+
         else:
             kmeans = faiss.Kmeans(
                 all_tcr_gex_embedding.shape[1],
@@ -674,8 +777,10 @@ def _cluster_tcr_by_label_core(
                 niter=20,
                 verbose=True,
             )
+        kmeans.cp.min_points_per_centroid = 1
+        kmeans.cp.max_points_per_centroid = 1000000000
             
-        kmeans.train(all_tcr_gex_embedding)
+        kmeans.train(all_tcr_gex_embedding, init_centroids=all_tcr_gex_embedding)
         D, I = kmeans.index.search(query_tcr_gex_embedding, max_cluster_size)
         index = kmeans.index
     elif faiss_index_backend == FAISS_INDEX_BACKEND.FLAT:
@@ -728,12 +833,13 @@ def _cluster_tcr_by_label_core(
     def FLATTEN(x):
         return [i for s in x for i in s]
 
-    def par_func(data, queue):
+    def par_func(data, queue=None):
         ret = []
-        for i in data:
+        nk = data['params']['nk']
+        for i in data['data']:
             label = np.array([label_map[x] for x in I[i]])
             cell_number = np.array([cell_number_map[x] for x in I[i]])
-            hla_allelles = {k: np.array([hla_map[k][x] for x in I[i]]) for k in hla_map.keys()}
+
             if max_distance > 0:
                 mp = np.argwhere(D[i] > max_distance)
                 if len(mp) > 0:
@@ -745,7 +851,29 @@ def _cluster_tcr_by_label_core(
 
             for j in list(range(2, max(2, init_j + 1)))[::-1]:
                 pure_criteria_pass = pure_criteria(label[:j], label[0])
-                if pure_criteria_pass or (not pure_label):
+                if not pure_criteria_pass:
+                    continue
+                same_trbv_flag = len(np.unique(df.iloc[I[i,:j]].loc[:,'TRBV'].to_numpy().flatten())) == 1
+                same_trav_flag = len(np.unique(df.iloc[I[i,:j]].loc[:,'TRAV'].to_numpy().flatten())) == 1
+                same_cdr3a_length_flag = len(np.unique(df.iloc[I[i,:j]].loc[:,'CDR3a'].apply(len).to_numpy().flatten())) == 1
+                same_cdr3b_length_flag = len(np.unique(df.iloc[I[i,:j]].loc[:,'CDR3b'].apply(len).to_numpy().flatten())) == 1
+                tcr_criteria_pass = (same_trbv_flag or not same_trbv) and \
+                    (same_trav_flag or not same_trav) and \
+                    (same_cdr3a_length_flag or not same_cdr3a_length) and \
+                    (same_cdr3b_length_flag or not same_cdr3b_length)
+                if not tcr_criteria_pass:
+                    continue
+                same_hla = False
+                same_hla_keys = []
+                if hla_map is not None:
+                    hla = {k:np.array([hla_map[k][x] for x in I[i][:j]]) for k in hla_map.keys()}
+                    # check if any of the HLA is same
+                    for key in hla.keys():
+                        for allele in list(filter(lambda x: x != '-', np.unique(FLATTEN(hla[key])))):
+                            if all(list(map(lambda x: allele in x if any(map(lambda z: z != '-', x)) else True, hla[key]))):
+                                same_hla = True
+                                same_hla_keys.append(allele)
+                if (pure_criteria_pass or (not pure_label)) and (same_hla or include_hla_keys is None) and tcr_criteria_pass:
                     d = label[0]
                     if pure_label:
                         pomc = list(filter(lambda x: label[x] == d, range(0, j)))
@@ -758,17 +886,7 @@ def _cluster_tcr_by_label_core(
 
                     cluster_size = len(pomc)
                     
-                    same_hla = None
-                    if hla_map is not None:
-                        same_hla = []
-                        for h in hla_allelles.keys():
-                            for k in np.unique(FLATTEN(hla_allelles[h][:j])):
-                                if all(list(map(lambda x: k in x or x[0] == '-', zip(*list(hla_allelles[h][:j]))))):
-                                    same_hla.append(k)
-                        same_hla = ','.join(same_hla)
-
-
-                    comp_size = k if k > 0 else cluster_size
+                    comp_size = nk if nk > 0 else cluster_size
                     ret.append(
                         (
                             (cluster_size - 1) // CAT_STORAGE_SIZE,
@@ -790,7 +908,7 @@ def _cluster_tcr_by_label_core(
                                 #    (D[i][pomc] * cell_number[pomc]).sum() / sum(cell_number[pomc]),  # for disease association measurement
                                 D[i][comp][:comp_size].mean() - D[i][pomc].mean(),
                                 i,
-                                same_hla,
+                                ';'.join(same_hla_keys),
                             ],
                         )
                     )
@@ -801,10 +919,10 @@ def _cluster_tcr_by_label_core(
             queue.put(0)
         return ret
     
-    mt(f"Clustering clonotypes using {n_jobs} threads")
+    mt(f"Clustering clonotypes using {n_jobs} partitions")
     start = time.time()
     if n_jobs > 1:
-        mt("The estimated time is based on the number of threads. The actual time should be much shorter.")
+        '''
         p = Parallelizer(n_jobs=n_jobs,)
         ret = p.parallelize(
             map_func=par_func,
@@ -813,6 +931,19 @@ def _cluster_tcr_by_label_core(
             progress=True,
             backend='loky'
         )()
+        ''' 
+        with tqdm_joblib(tqdm.tqdm(
+            total=n_jobs,
+            bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}',
+            position=0, 
+            leave=True
+        )) as pbar:
+            ret = FLATTEN(Parallel(
+                n_jobs=n_jobs,
+            )(
+                delayed(par_func)(x) for x in partition(list(range(I.shape[0])), n_jobs, nk=nk)
+            ))
+            
 
     else:
         ret = []
@@ -822,7 +953,7 @@ def _cluster_tcr_by_label_core(
         for i in range(I.shape[0]):
             label = np.array([label_map[x] for x in I[i]])
             cell_number = np.array([cell_number_map[x] for x in I[i]])
-            hla_allelles = {k: np.array([hla_map[k][x] for x in I[i]]) for k in hla_map.keys()}
+
             mp = np.argwhere(D[i] > max_distance)
             if len(mp) > 0:
                 init_j = mp[0][0]
@@ -831,17 +962,33 @@ def _cluster_tcr_by_label_core(
 
             for j in list(range(2, max(2, init_j + 1)))[::-1]:
                 pure_criteria_pass = pure_criteria(label[:j], label[0])
+                if not pure_criteria_pass:
+                    continue
+                same_trbv_flag = len(np.unique(df.iloc[I[i,:j]].loc[:,'TRBV'].to_numpy().flatten())) == 1
+                same_trav_flag = len(np.unique(df.iloc[I[i,:j]].loc[:,'TRAV'].to_numpy().flatten())) == 1
+                same_cdr3a_length_flag = len(np.unique(df.iloc[I[i,:j]].loc[:,'CDR3a'].apply(len).to_numpy().flatten())) == 1
+                same_cdr3b_length_flag = len(np.unique(df.iloc[I[i,:j]].loc[:,'CDR3b'].apply(len).to_numpy().flatten())) == 1
+                tcr_criteria_pass = (same_trbv_flag or not same_trbv) and \
+                    (same_trav_flag or not same_trav) and \
+                    (same_cdr3a_length_flag or not same_cdr3a_length) and \
+                    (same_cdr3b_length_flag or not same_cdr3b_length)
+                if not tcr_criteria_pass:
+                    continue
+                same_hla = False
+                same_hla_keys = []
                 if hla_map is not None:
-                    same_hla = False
-                    same_hla_keys = []
-                    hla = [np.array([hla_map[k][x] for x in I[i]]) for k in range(len(hla_map))]
+                    hla = {k:np.array([hla_map[k][x] for x in I[i][:j]]) for k in hla_map.keys()}
                     # check if any of the HLA is same
-                    for k in range(len(hla_map)):
-                        if len(set(hla[k])) == 1:
-                            same_hla = True
-                            same_hla_keys.append(hla[k][0])
-
-                if pure_criteria_pass or (not pure_label):
+                    for key in hla.keys():
+                        for allele in list(filter(
+                            lambda x: x != '-', 
+                            np.unique(FLATTEN(hla[key]))
+                        )):
+                            if all(list(map(lambda x: allele in x if any(map(lambda z: z != '-', x)) else True, hla[key]))):
+                                same_hla = True
+                                same_hla_keys.append(allele)
+                
+                if pure_criteria_pass or (not pure_label) and (same_hla or include_hla_keys is None) and tcr_criteria_pass:
                     d = label[0]
                     if pure_label:
                         pomc = list(filter(lambda x: label[x] == d, range(0, j)))
@@ -853,17 +1000,7 @@ def _cluster_tcr_by_label_core(
                         comp = list(range(j, max_cluster_size))[:j]
                     cluster_size = len(pomc)
 
-                    same_hla = None
-                    if hla_map is not None:
-                        same_hla = []
-                        for h in hla_allelles.keys():
-                            for k in np.unique(FLATTEN(hla_allelles[h][:j])):
-                                if all(list(map(lambda x: k in x or x[0] == '-', zip(*list(hla_allelles[h][:j]))))):
-                                    same_hla.append(k)
-                        same_hla = ','.join(same_hla)
-
-
-                    comp_size = k if k > 0 else cluster_size
+                    comp_size = nk if nk > 0 else cluster_size
                     ret.append(
                         (
                             (cluster_size - 1) // CAT_STORAGE_SIZE,
@@ -885,7 +1022,7 @@ def _cluster_tcr_by_label_core(
                                 #    (D[i][pomc] * cell_number[pomc]).sum() / sum(cell_number[pomc]),  # for disease association measurement
                                 D[i][comp][:comp_size].mean() - D[i][pomc].mean(),
                                 i,
-                                same_hla,
+                                ';'.join(same_hla_keys),
                             ],
                         )
                     )
@@ -999,7 +1136,7 @@ def _cluster_tcr_by_label_core(
         if not low_memory:
             for i in list(range(1, max_cluster_size_ + 1))[::-1]:
                 result_tcr.iloc[:, i] = result_tcr.iloc[:, i].apply(
-                    lambda x: all_tcr_sequence[x] if x >= 0 else "-"
+                    lambda x: partial(TCR, species=species)(*list(df.iloc[x].loc[['CDR3a','CDR3b','TRAV','TRBV','TRAJ','TRBJ','individual']].to_numpy().flatten())) if x >= 0 else None
                 )
 
         result_tcr["number_of_individuals"] = list(
@@ -1008,8 +1145,8 @@ def _cluster_tcr_by_label_core(
                     np.unique(
                         list(
                             map(
-                                lambda z: z.split("=")[-1],
-                                filter(lambda x: x != "-", x),
+                                lambda z: z.individual,
+                                list(filter(lambda y: y is not None, x))
                             )
                         )
                     )
@@ -1024,8 +1161,8 @@ def _cluster_tcr_by_label_core(
                     np.unique(
                         list(
                             map(
-                                lambda z: "=".join(z.split("=")[:-1]),
-                                filter(lambda x: x != "-", x),
+                                lambda z: z.to_tcr_string(),
+                                list(filter(lambda y: y is not None, x))
                             )
                         )
                     )
@@ -1033,12 +1170,13 @@ def _cluster_tcr_by_label_core(
                 result_tcr.iloc[:, 1 : max_cluster_size_ + 1].to_numpy(),
             )
         )
-        offset=7
+
+        offset=8
         if "number_of_cells" in df.columns:
             all_number_of_cell = df["number_of_cells"].to_numpy()
             for i in list(range(1, max_cluster_size_ + 1))[::-1]:
                 result_cell_number.iloc[:, i] = result_cell_number.iloc[:, i].apply(
-                    lambda x: all_number_of_cell[x] if x >= 0 else "-"
+                    lambda x: all_number_of_cell[x] if x >= 0 else 0
                 )
             result_tcr["number_of_cells"] = result_cell_number.iloc[
                 :, 1 : max_cluster_size_ + 1
@@ -1055,6 +1193,7 @@ def _cluster_tcr_by_label_core(
                 "mean_distance_other",
                 "distance_difference",
                 "cluster_index",
+                "same_hla",
                 "number_of_individuals",
                 "number_of_unique_tcrs",
             ]
@@ -1091,7 +1230,7 @@ def _cluster_tcr_by_label_core(
         if not low_memory:
             tcrs = list(
                 map(
-                    ",".join,
+                    lambda z: list(filter(lambda x: x is not None, z)),
                     result_tcr.loc[
                         :, [f"TCRab{x}" for x in range(1, max_cluster_size_ + 1)]
                     ].to_numpy(),
@@ -1144,7 +1283,7 @@ def inject_labels_for_tcr_cluster_adata(
     :param reference_adata: sc.AnnData. Reference AnnData object containing labels
     :param tcr_cluster_adata: sc.AnnData
     :param label_key: str. Key of the label to use for clustering in reference_adata.obs.columns
-    :param map_function: Callable. Default: function that returns the most frequent label otherwise "Ambigious"
+    :param map_function: Callable. Default: function that returns the most frequent label.
     
     :note:
         This method modifies the `df` inplace and adds the following columns:
@@ -1165,7 +1304,7 @@ def inject_labels_for_tcr_cluster_adata(
     tcr2int = dict(zip(reference_data['tcr'], range(len(reference_data['tcr']))))
 
     for tcrs in tcr_list:
-        tcrs = list(filter(lambda x: x != '-', tcrs))
+        tcrs = list(filter(lambda x: x != '-' and x is not None, tcrs))
         if len(tcrs) == 0:
             labels.append("NA")
         else:
@@ -1180,77 +1319,3 @@ def inject_labels_for_tcr_cluster_adata(
             ][label_key])) 
 
     tcr_cluster_adata.obs[label_key] = labels
-
-@typed({
-    "tcr_adata": sc.AnnData,
-    "tcr_reference_adata": sc.AnnData,
-    "use_gpu": bool,
-    "gpu": int,
-    "max_tcr_distance": float,
-    "layer_norm": bool,
-    "faiss_index_backend": str
-})
-def query_tcr_without_gex(
-    tcr_query_adata: sc.AnnData,
-    tcr_reference_adata: sc.AnnData,
-    use_gpu: bool = False,
-    gpu=0,
-    max_tcr_distance: float = 20.,
-    layer_norm: bool = True,
-    faiss_index_backend: FAISS_INDEX_BACKEND = FAISS_INDEX_BACKEND.KMEANS
-):
-    if layer_norm:
-        ln_1 = torch.nn.LayerNorm(tcr_reference_adata.obsm["X_tcr_pca"].shape[1])
-        X_tcr_pca_reference = ln_1(torch.tensor(tcr_reference_adata.obsm["X_tcr_pca"], dtype=torch.float32)).detach().cpu().numpy()
-        X_tcr_pca_query = ln_1(torch.tensor(tcr_query_adata.obsm["X_tcr_pca"], dtype=torch.float32)).detach().cpu().numpy()
-    else:
-        X_tcr_pca_reference = tcr_reference_adata.obsm["X_tcr_pca"]
-        X_tcr_pca_query = tcr_query_adata.obsm["X_tcr_pca"]
-
-    mt("computing pairwise disease of TCRs...")
-
-    if faiss_index_backend == "kmeans":
-        kmeans = faiss.Kmeans(
-            X_tcr_pca_query.shape[1],
-            X_tcr_pca_query.shape[0],
-            niter=20,
-            verbose=True,
-            gpu=gpu
-        )
-        # ignore faiss warnings
-        kmeans.cp.min_points_per_centroid = 1
-        kmeans.cp.max_points_per_centroid = 1000000000
-        kmeans.train(X_tcr_pca_reference.astype(np.float32))
-        D, I = kmeans.index.search(X_tcr_pca_query.astype(np.float32), 40)
-    else:
-        use_gpu = False
-        quantizer = faiss.IndexFlatL2(X_tcr_pca_query.shape[1])
-        index = faiss.IndexIVFFlat(quantizer, X_tcr_pca_query.shape[1], 100)
-        if use_gpu:
-            try:
-                res = faiss.StandardGpuResources()
-            except:
-                use_gpu = False
-                mt("Warning: faiss GPU resources not found. Using CPU.")
-            index = faiss.index_cpu_to_gpu(res, gpu, index)
-
-        index.train(X_tcr_pca_reference.astype(np.float32))
-        index.add(X_tcr_pca_reference.astype(np.float32))
-        D, I = index.search(X_tcr_pca_query.astype(np.float32), 40)
-    D = np.sqrt(D) # squared L2 distance to L1 distance
-    I[D > max_tcr_distance] = -1
-    tcr_col_index = tcr_reference_adata.obs.columns.get_loc("tcr")
-    result = []
-    
-    for i in I:
-        result.append(
-            json.dumps(
-                list(
-                    map(
-                        lambda z: tcr_reference_adata.obs.iloc[z, tcr_col_index],
-                        filter(lambda x: x != -1, i),
-                    )
-                )
-            )
-        )
-    tcr_query_adata.obs["tcr_query"] = result

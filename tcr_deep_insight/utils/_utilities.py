@@ -6,19 +6,50 @@ import torch
 from collections import Counter
 from umap.distances import euclidean
 import warnings
-from ._logger import Colors
+
 from typing import List
 import torch
 from functools import partial
 
+import contextlib
+import joblib
+from tqdm import tqdm
 
 from scatlasvae.utils._parallelizer import Parallelizer
 from scatlasvae.utils._decorators import deprecated
 
+from ._logger import Colors
+
+def partition(lst, n, **params):
+    division = len(lst) / n
+    ret = []
+    for i in range(n):
+        elem = {
+            'data': lst[int(round(division * i)): int(round(division * (i + 1)))],
+            'params': params
+        }
+        ret.append(elem)
+    return ret
+
+@contextlib.contextmanager
+def tqdm_joblib(tqdm_object):
+    """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            tqdm_object.update(n=self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_batch_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield tqdm_object
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_batch_callback
+        tqdm_object.close()
+
 
 def FLATTEN(x): 
     return [i for s in x for i in s]
-
 
 def highlight_iterable(arr, print_fn, highlight_fn, highlight_condition, sep=', '):
     return sep.join([highlight_fn(print_fn(x)) if highlight_condition(x) else print_fn(x) for x in arr])
@@ -227,8 +258,8 @@ def default_aggrf(i, ambiguous="Ambiguous"):
         c = Counter(i)
         return sorted(c.items(), key=lambda x: -x[1])[0][0]
             
-def default_pure_criteria(x,y):
-    return (Counter(x).most_common()[0][1] / len(x) > 0.8) and Counter(x).most_common()[0][0] == y
+def default_pure_criteria(x,y,percentage:float=0.7):
+    return (Counter(x).most_common()[0][1] / len(x) > percentage) and Counter(x).most_common()[0][0] == y
 
 def exists(x):
     return x is not None

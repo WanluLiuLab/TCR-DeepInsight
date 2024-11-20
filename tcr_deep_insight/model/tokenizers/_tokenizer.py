@@ -17,16 +17,11 @@ from transformers import (
 
 from scatlasvae.utils._tensor_utils import get_k_elements
 
-from ...utils._tcr import (
+from ...utils._tcr_definitions import (
     HumanTCRAnnotations,
     MouseTCRAnnotations
 )
-from ...utils._definitions import (
-    TRAV2CDR1a,
-    TRAV2CDR2a,
-    TRBV2CDR1b,
-    TRBV2CDR2b,
-)
+
 from ...utils._compat import Literal
 from ...utils._decorators import deprecated
 from ...utils._amino_acids import (
@@ -373,6 +368,7 @@ class TCRabTokenizerForCDR123(AminoAcidTokenizer):
         mask_token: Optional[str] = None,
         cls_token: Optional[str] = None,
         sep_token: Optional[str] = None,
+        species: Literal['human', 'mouse'] = 'human',
         **kwargs
     ) -> None:
         # A special token representing an out-of-vocabulary token.
@@ -388,10 +384,15 @@ class TCRabTokenizerForCDR123(AminoAcidTokenizer):
         super(TCRabTokenizerForCDR123, self).__init__(model_max_length = tra_max_length + trb_max_length, **kwargs)
         self.tra_max_length = tra_max_length
         self.trb_max_length = trb_max_length
+        self.species = species
 
     def _encode(self, aa: str, v_gene: str = None, j_gene: str = None, max_length: int = None) -> torch.Tensor:
-        cdr1 = TRAV2CDR1a[v_gene] if v_gene in TRAV2CDR1a.keys() else TRBV2CDR1b[v_gene]
-        cdr2 = TRAV2CDR2a[v_gene] if v_gene in TRAV2CDR2a else TRBV2CDR2b[v_gene] 
+        if self.species == 'human':
+            cdr1 = HumanTCRAnnotations.TRAV2CDR1a[v_gene] if v_gene in HumanTCRAnnotations.TRAV2CDR1a.keys() else HumanTCRAnnotations.TRBV2CDR1b[v_gene]
+            cdr2 = HumanTCRAnnotations.TRAV2CDR2a[v_gene] if v_gene in HumanTCRAnnotations.TRAV2CDR2a.keys() else HumanTCRAnnotations.TRBV2CDR2b[v_gene]
+        elif self.species == 'mouse':
+            cdr1 = MouseTCRAnnotations.TRAV2CDR1a[v_gene] if v_gene in MouseTCRAnnotations.TRAV2CDR1a.keys() else MouseTCRAnnotations.TRBV2CDR1b[v_gene]
+            cdr2 = MouseTCRAnnotations.TRAV2CDR2a[v_gene] if v_gene in MouseTCRAnnotations.TRAV2CDR2a.keys() else MouseTCRAnnotations.TRBV2CDR2b[v_gene]
         aa = cdr1 + '.' + cdr2 + '.' + aa
         aa = list(aa)
 

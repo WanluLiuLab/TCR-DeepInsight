@@ -4,6 +4,10 @@ Transfer and Clustering TCRαβ and GEX
 This notebook demonstrates how to transfer and cluster TCRαβ from new (query) datasets to reference dataset. We use the human huARdb v2 reference dataset as the reference dataset, and a
 new dataset as the query dataset.
 
+
+Load the reference dataset
+--------------------------
+
 .. code-block:: python
   :linenos:
   
@@ -17,6 +21,12 @@ new dataset as the query dataset.
   assert("X_tcr" in tcr_reference_adata.obsm.keys())
 
 
+Load the Query dataset
+----------------------
+
+.. code-block:: python
+  :linenos:
+  
   gex_query_adata = sc.read_h5ad('path/to/query/adata.h5ad')
 
   # Update the anndata object
@@ -46,6 +56,15 @@ new dataset as the query dataset.
 
   assert("X_tcr" in tcr_query_adata.obsm.keys())
 
+
+Cluster the TCR and GEX data together using both the reference and query datasets
+---------------------------------------------------------------------------------
+
+
+.. code-block:: python
+  :linenos:
+  
+  import os
   # We can now cluster the TCR and GEX data together
   tdi_cluster_result = tdi.tl.cluster_tcr_from_reference(
     tcr_query_adata,
@@ -53,6 +72,7 @@ new dataset as the query dataset.
     'disease_type',
     max_distance=4.,
     max_cluster_size=100,
+    n_jobs=os.cpu_count(),
   )
 
-
+  tdi_cluster_result.save_to_disk('path/to/save/cluster_result')

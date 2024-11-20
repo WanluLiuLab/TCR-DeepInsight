@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 from collections import Counter
 from typing import Any, List, Mapping, Optional, Tuple
 import scanpy as sc
@@ -13,11 +16,10 @@ from ._palette import godsnot_102
 from ..tool._deep_insight_result import TDIResult
 
 import matplotlib.font_manager as fm
-import warnings
 from pathlib import Path
 
 MODULE_PATH = Path(__file__).parent
-warnings.filterwarnings("ignore")
+
 
 # Path to your OTF font file
 font_path =  os.path.join(MODULE_PATH, "fonts", "Arial.ttf")

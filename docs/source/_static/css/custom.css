@@ -1,4 +1,9 @@
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
     margin-top: 16px;
 }
 
@@ -60,4 +65,47 @@ h1, h2, h3, h4, h5, h6 {
 .rst-content pre.literal-block div[class^=highlight] {
     border: solid !important;
     border-width: 1px !important;
+}
+
+pre {
+    background-color: #f9fafb;
+}
+
+.sidebar-brand-text {
+    font-size: 1rem;
+}
+
+.sidebar-drawer {
+    background-color: #FFFFFF !important;
+}
+
+.toctree-l1 a {
+    color: #030303 !important;
+}
+.toctree-l2 a {
+    color: #030303 !important;
+}
+.toctree-l3 a {
+    color: #030303 !important;
+}
+
+.function em {
+    white-space: pre;
+    display: inline;
+}
+
+.function em::before {
+    content: "";
+    display: block; /* Forces a line break */
+    text-indent: 2.5em;
+}
+
+.sig-paren::before {
+    content: "";
+    display: var(--line-break-content, inline);
+    text-indent: 2.5em;
+}
+
+.sig-inline, code.literal {
+    background: none;
 }

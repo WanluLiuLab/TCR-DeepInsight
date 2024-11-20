@@ -1,6 +1,18 @@
 Tutorial
 ========
 
+
+
+Contents
+--------
+.. toctree::
+    :maxdepth: 2
+    
+    preprocessing
+    tcr_training
+    gex_training
+    tcr_clustering
+
 Processing 10x Immune Profiling Data
 ------------------------------------
 
@@ -8,17 +20,16 @@ please refer to `scAtlasVAE documentation <https://scatlasvae.readthedocs.io/en/
 
 TCR Tutorial
 ------------
-s
-please refer to :doc:`tcr_training` for the tutorial on TCR training and embedding generation.
+Please refer to :doc:`tcr_training` for the tutorial on TCR training and embedding generation.
 
 
 GEX Tutorial
 ------------
 
-please refer to :doc:`gex_training` for the tutorial on GEX training and embedding generation.
+Please refer to :doc:`gex_training` for the tutorial on GEX training and embedding generation.
 
 
 TrGx Clustering Tutorial
 ------------------------
 
-please refer to :doc:`tcr_clustering` for the tutorial on clustering of TCR and GEX embeddings.
+Please refer to :doc:`tcr_clustering` for the tutorial on clustering of TCR and GEX embeddings.

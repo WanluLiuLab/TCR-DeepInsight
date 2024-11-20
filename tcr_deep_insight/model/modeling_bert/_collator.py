@@ -7,7 +7,7 @@ from ...utils._amino_acids import (_AMINO_ACIDS, _AMINO_ACIDS_ADDITIONALS,
                                   _AMINO_ACIDS_INDEX_REVERSE,
                                   _AMINO_ACIDS_INDEX)
 
-from ...utils._tcr import HumanTCRAnnotations, MouseTCRAnnotations
+from ...utils._tcr_definitions import HumanTCRAnnotations, MouseTCRAnnotations
 
 
 class AminoAcidsCollator:

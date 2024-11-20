@@ -3,18 +3,30 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to T-DeepInsight's documentation!
-============================================
 
-.. toctree::
-   :maxdepth: 4
-   :caption: Contents:
+|Maintenance yes|
+
+.. |Maintenance yes| image:: https://img.shields.io/badge/Maintained%3F-yes-green.svg
+   :target: https://github.com/WanluLiuLab/TCR-DeepInsight
+|PyPI version|
+
+.. |PyPI version| image:: https://img.shields.io/badge/pypi-v0.10.11-blue
+   :target: https://pypi.org/project/tcr-deep-insight/
+|Docs passing|
+
+.. |Docs passing| image:: https://readthedocs.org/projects/tcr-deepinsight/badge/?version=latest
+   :target: https://tcr-deepinsight.readthedocs.io/en/latest/?badge=latest
+
+Welcome to TCR-DeepInsight's documentation!
+============================================
 
 Contents
 --------
 .. toctree::
 
    intro
+   install
    preprocessing
    tutorial
    api
+   knowledge

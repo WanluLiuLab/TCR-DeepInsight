@@ -163,7 +163,7 @@ class TRabModelingBertForVJCDR3(ModuleBase):
             if self.pooling == "mean":
                 hidden_states = output.hidden_states[-1][:,1:,:].mean(1)
             elif self.pooling == "max":
-                hidden_states = output.hidden_states[-1][:,1:,:].max(1)
+                hidden_states = output.hidden_states[-1][:,1:,:].max(1)[0]
             elif self.pooling == "cls":
                 hidden_states = output.hidden_states[-1][:,self.pooling_cls_position,:]
             elif self.pooling == 'pool':
@@ -295,13 +295,17 @@ class TRabModelingBertForPseudoSequence(nn.Module):
                 if self.pooling == "mean":
                     hidden_states = output.hidden_states[-1][:, 1:, :].mean(1)
                 elif self.pooling == "max":
-                    hidden_states = output.hidden_states[-1][:,1:,:].max(1)
+                    hidden_states = output.hidden_states[-1][:,1:,:].max(1)[0]
                 elif self.pooling == "cls":
                     hidden_states = output.hidden_states[-1][:,0,:]
                 elif self.pooling == 'cdr3b':
-                    hidden_states = output.hidden_states[-1][:,74:,:]
+                    hidden_states = output.hidden_states[-1][:,74:,:].mean(1)
                 elif self.pooling == 'cdr3a':
-                    hidden_states = output.hidden_states[-1][:,19:55,:]
+                    hidden_states = output.hidden_states[-1][:,19:55,:].mean(1)
+                elif self.pooling == 'tra':
+                    hidden_states = output.hidden_states[-1][:,56:,:].mean(1)
+                elif self.pooling == 'trb':
+                    hidden_states = output.hidden_states[-1][:,1:55,:].mean(1)      
                 elif self.pooling == 'weighted':
                     hidden_states = (output.hidden_states[-1] * self.pooling_weight.to(input_ids.device)).mean(1)
             elif callable(self.pooling):

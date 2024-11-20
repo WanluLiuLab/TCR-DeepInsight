@@ -6,7 +6,7 @@ from typing import Callable, List, Optional, Union, Iterable
 from scatlasvae.utils._decorators import typed
 
 from ..utils._logger import mt
-from ..utils._definitions import (
+from ..utils._tcr_definitions import (
     TRA_DEFINITION_ORIG,
     TRAB_DEFINITION_ORIG,
     TRB_DEFINITION_ORIG,

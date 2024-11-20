@@ -4,49 +4,130 @@ Clustering TCRαβ and GEX
 This example shows how to cluster the joint information from 
 TCRαβ and GEX data. We use the human huARdb v2 reference dataset as an example.
 
+
+
+
+Load the reference dataset
+--------------------------
+
 .. code-block:: python
   :linenos:
-  
+
   import tcr_deep_insight as tdi
   import torch 
   
-  # We have trained a VAE model on the GEX data
-  # which we can use to get the GEX embeddings
   gex_reference_adata = tdi.data.human_gex_reference_v2()
 
-  assert("X_gex" in gex_reference_adata.obsm.keys())
 
-  # Update the anndata object
-  tdi.pp.update_anndata(gex_reference_adata)
-  
-  # Get unique TCRs by individual
-  tcr_reference_adata = tdi.pp.unique_tcr_by_individual(gex_reference_adata)
+Searching for cGxTr clusters without any constraints
+-----------------------------------------------------
 
-  # Remove TRBV20OR9-2 as it is not in the IMGT reference
-  tcr_reference_adata = tcr_reference_adata[tcr_reference_adata.obs['TRBV']  != 'TRBV20OR9-2']
+Search for TCR clusters without considering disease type or HLA information. The clustering will be performed based on the similarity of TCR sequences and the GEX data.
 
-  # We have trained a BERT model on the TCR sequence, 
-  # which we can use to get the TCR embeddings
-  tdi.tl.get_pretrained_tcr_embedding(
-    tcr_adata=tcr_reference_adata,
-    bert_config=tdi.model.modeling_bert.get_human_config(),
-    checkpoint_path='./tcr_deep_insight/data/pretrained_weights/human_bert_pseudosequence.tcr_v2.ckpt',
-    pca_path='./tcr_deep_insight/data/pretrained_weights/human_bert_pseudosequence_pca.tcr_v2.pkl',
-    use_pca=True,
-    encoding='cdr123',
-  )
+.. code-block:: python
+  :linenos:
 
-  assert("X_tcr" in tcr_reference_adata.obsm.keys())
-
-  # We can now cluster the TCR and GEX data together
   tdi_cluster_result = tdi.tl.cluster_tcr(
     tcr_reference_adata,
-    'disease_type',
     max_distance=4.,
     max_cluster_size=100,
+    n_jobs=16
+  )
+
+
+Searching for cGxTr clusters with at least one common HLA alleles
+-----------------------------------------------------------------
+
+If the HLA information is available in the `tcr_adata.obs` object, we can include the HLA information in the clustering.
+
+.. code-block:: python
+  :linenos:
+
+  # if HLA information is available in the tcr_adata object
+  include_hla_keys = {
+    'A': ['A_1','A_2'],
+    'B': ['B_1','B_2'],
+    'C': ['C_1','C_2']
+  }
+  hla_map = {
+    key: dict(
+        zip(
+          range(len(tcr_adata.obs)), 
+          tcr_adata.obs.loc[:,val].to_numpy()
+        )
+      ) for key,val in include_hla_keys.items()
+  }
+
+  tdi_cluster_result_hla = tdi.tl.cluster_tcr(
+    tcr_reference_adata,
+    max_distance=4.,
+    max_cluster_size=100,
+    n_jobs=16,
+    include_hla_keys=include_hla_keys
   )
 
 
 
+Searching for cGxTr clusters with unique disease type
+------------------------------------------------------
+
+if `label_key` is provided in the `tcr_adata.obs` object, we can include the disease type information in the clustering. We constrain the TCRs in the same cluster to have the same disease type. See more details in the :func:`tcr_deep_insight.tl.cluster_tcr` function documentation.
+
+.. code-block:: python
+  :linenos:
+
+  tdi_cluster_result_disease = tdi.tl.cluster_tcr(
+    tcr_reference_adata,
+    label_key='disease_type',
+    max_distance=4.,
+    max_cluster_size=100,
+    n_jobs=16
+  )
 
 
+Searching for cGxTr clusters with constrains on TCRs
+----------------------------------------------------
+
+We can constrain that the TCRs in the same cluster have the same TRBV gene segment or the same CDR3β length.
+
+.. code-block:: python
+  :linenos:
+
+  tdi_cluster_result_disease = tdi.tl.cluster_tcr(
+    tcr_reference_adata,
+    label_key='disease_type',
+    max_distance=4.,
+    max_cluster_size=100,
+    same_trbv=True,
+    same_cdr3b_length=True,
+    n_jobs=16
+  )
+
+We also provide the constrain on the alpha chain, including arguments `same_trav`, `same_cdr3a_length`. 
+
+Combining the clustering constrains
+------------------------------------
+
+The constrains can be combined together.
+
+.. code-block:: python
+  :linenos:
+  include_hla_keys = {
+    'A': ['A_1','A_2'],
+    'B': ['B_1','B_2'],
+    'C': ['C_1','C_2']
+  }
+  tdi_cluster_result_disease = tdi.tl.cluster_tcr(
+    tcr_reference_adata,
+    label_key='disease_type',
+    max_distance=4.,
+    max_cluster_size=100,
+    same_trbv=True,
+    same_cdr3b_length=True,
+    same_trav=True,
+    same_cdr3a_length=True,
+    include_hla_keys=include_hla_keys,
+    n_jobs=16
+  )
+
+For more information, please refer to the :func:`tcr_deep_insight.tl.cluster_tcr` function documentation.

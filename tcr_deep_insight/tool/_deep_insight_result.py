@@ -10,7 +10,17 @@ from faiss import IndexFlatL2
 from ..utils._compat import Literal
 from ..utils._logger import Colors, get_tqdm
 from ..utils._utilities import FLATTEN
-from ..utils._definitions import TRAB_DEFINITION
+from ..utils._tcr_definitions import TRAB_DEFINITION
+from ..utils._tcr import TCR
+
+def check_is_parquet_serializable(obj: pd.DataFrame):
+    for c in obj.columns:
+        if obj[c].dtype == 'O':
+            obj[c] = obj[c].astype(str)
+        elif isinstance(obj[c].dtype, pd.CategoricalDtype):
+            obj[c] = obj[c].astype(str)
+    return obj
+
 
 class TDIResult:
     """
@@ -37,10 +47,10 @@ class TDIResult:
     ):
         self._data = _data 
         self._tcr_df = _tcr_df
-        if _tcr_adata is not None:
-            self._tcr_df = _tcr_adata.obs
+
         self._tcr_adata = _tcr_adata
         self._gex_adata = _gex_adata
+
         self._cluster_label = _cluster_label
         self._data.uns["_cluster_label"] = _cluster_label
         self.faiss_index = faiss_index
@@ -49,10 +59,22 @@ class TDIResult:
     @property
     def data(self):
         return self._data
-    
+
     @property
     def cluster_label(self):
         return self._cluster_label
+
+    @property
+    def I(self):
+        return self._data.uns['I']
+
+    @property
+    def D(self):
+        return self._data.uns['D']
+
+    @property
+    def tcr_df(self):
+        return self._tcr_df
 
     @cluster_label.setter
     def cluster_label(self, cluster_label: str):
@@ -70,7 +92,7 @@ class TDIResult:
     @property
     def gex_adata(self):
         return self._gex_adata
-    
+
     @gex_adata.setter
     def gex_adata(self, gex_adata: sc.AnnData):
         self._gex_adata = gex_adata
@@ -81,39 +103,35 @@ class TDIResult:
         if self._cluster_label is not None:
             base_string += f'     Cluster label: {self._cluster_label}\n'
 
-        
-
         if self._gex_adata is not None:
-                base_string += f'     GEX data: \n' +\
+            base_string += f'     GEX data: \n' +\
                  '     ' + self._gex_adata.__repr__().replace('\n', '\n     ')
         if self._tcr_adata is not None:
-                base_string += f'     TCR data: \n' +\
+            base_string += f'     TCR data: \n' +\
                  '     ' + self._tcr_adata.__repr__().replace('\n', '\n     ') 
         return base_string
-    
 
     def calculate_cluster_additional_information(self):
-        
+
         self.data.obs['unique_tra'] = list(map(lambda x: 
             len(np.unique(list(map(lambda x: 
-                    '='.join([x.split("=")[0],x.split("=")[2],x.split("=")[3]]),
-                    filter(lambda z: z != '-', x.split(","))
+                    '='.join([x.cdr3a, x.trav, x.traj]),
+                    x
             ))))==1, self.data.obs['TCRab']
         ))
         self.data.obs['unique_trb'] = list(map(lambda x: 
             len(np.unique(list(map(lambda x: 
-                    '='.join([x.split("=")[1],x.split("=")[4],x.split("=")[5]]),
-                    filter(lambda z: z != '-', x.split(","))
+                    '='.join([x.cdr3b, x.trbv, x.trbj]),
+                    x
             ))))==1, self.data.obs['TCRab']
         ))
 
         self.data.obs['MAIT_TCR'] = list(map(lambda x: 
             all(list(map(lambda x: 
-                    x.split("=")[2] == 'TRAV1-2' and x.split("=")[3] in ['TRAJ33','TRAJ20', 'TRAJ12'], 
-                    filter(lambda z: z != '-', x.split(","))
+                    x.trav == 'TRAV1-2' and x.traj in ['TRAJ33','TRAJ20', 'TRAJ12'], 
+                    x
             ))), self.data.obs['TCRab']
         ))
-        
 
     def save_to_disk(self, 
         save_path, 
@@ -125,31 +143,43 @@ class TDIResult:
         Save the cluster result to disk
 
         :param save_path: the path to save the cluster result
+        save_cluster_result_as_csv: whether to save the cluster result as csv files
         :param save_tcr_data: whether to save the tcr data
         :param save_gex_data: whether to save the gex data
         """
         if not os.path.exists(save_path):
             os.mkdir(save_path)
+        column0 = None
+        if isinstance(self._data.obs['TCRab'][0], list):
+            column0 = list(self._data.obs["TCRab"])
+            self._data.obs["TCRab"] = list(
+                map(
+                    lambda x: ",".join(list(map(lambda x: x.to_string(), x))),
+                    column0,
+                )
+            )
         self._data.write_h5ad(os.path.join(save_path, 'cluster_data.h5ad'))
+        if column0 is not None:
+            self._data.obs["TCRab"] = column0
+        self._tcr_df = check_is_parquet_serializable(self._tcr_df)
+        self._tcr_df.to_parquet(os.path.join(save_path, 'tcr_data.parquet'))
         if save_tcr_data and self._tcr_adata is not None:
             self._tcr_adata.write_h5ad(os.path.join(save_path, 'tcr_data.h5ad'))
         if save_gex_data and self._gex_adata is not None:
             self._gex_adata.write_h5ad(os.path.join(save_path, 'gex_data.h5ad'))
         if self.faiss_index is not None:
-            faiss.write_index(self.faiss_index, os.path.join(save_path, 'faiss_index.faiss'))
+            try:
+                faiss.write_index(self.faiss_index, os.path.join(save_path, 'faiss_index.faiss'))
+            except:
+                pass
+                # print('Failed to save faiss index')
         if save_cluster_result_as_csv:
             cluster_tcr = self.to_pandas_dataframe_tcr()
             cluster_index = self.to_pandas_dataframe_cluster_index()
-            cluster_tcr.to_csv(os.path.join(
-                save_path,
-                'cluster_tcr.csv',
-                index=False
-            ))
-            cluster_index.to_csv(os.path.join(
-                save_path,
-                'cluster_index.csv',
-                index=False
-            ))
+            cluster_tcr.to_csv(os.path.join(save_path, "cluster_tcr.csv"), index=False)
+            cluster_index.to_csv(
+                os.path.join(save_path, "cluster_index.csv"), index=False
+            )
 
     @classmethod
     def load_from_disk(
@@ -166,6 +196,16 @@ class TDIResult:
         :param gex_adata_path: the path to load the gex data
         """
         data = sc.read_h5ad(os.path.join(save_path, 'cluster_data.h5ad'))
+        data.obs["TCRab"] = list(
+            map(
+                lambda x: list(
+                    map(lambda z: TCR.from_string(z), filter(lambda tcr: tcr != '-', x.split(",")))
+                ),
+                data.obs["TCRab"],
+            )
+        )
+        if os.path.exists(os.path.join(save_path, 'tcr_data.parquet')):
+            tcr_df = pd.read_parquet(os.path.join(save_path, 'tcr_data.parquet'))
         if tcr_data_path is not None:
             print('Loading tcr data from {}'.format(tcr_data_path))
             tcr_adata = sc.read_h5ad(tcr_data_path)
@@ -187,21 +227,24 @@ class TDIResult:
         cluster_label = None
         if '_cluster_label' in data.uns:
             cluster_label = data.uns['_cluster_label']
-        
-        if os.path.exists(os.path.join(save_path, 'faiss_index.faiss')):
-            faiss_index = faiss.read_index(os.path.join(save_path, 'faiss_index.faiss'))
 
-        return cls(data, tcr_adata, gex_adata, cluster_label, faiss_index=faiss_index)
+        if os.path.exists(os.path.join(save_path, 'faiss_index.faiss')):
+            try:
+                faiss_index = faiss.read_index(os.path.join(save_path, 'faiss_index.faiss'))
+            except:
+                faiss_index = None
+
+        return cls(data, tcr_df, tcr_adata, gex_adata, cluster_label, faiss_index=faiss_index)
 
     def get_tcrs_for_cluster(
         self,
         label: str,
         rank: int = 0, 
-        rank_by: Literal["tcr_similarity", "disease_association"] = 'tcr_similarity',
+        rank_by: Literal["convergence", "disease_association"] = 'convergence',
         min_tcr_number: int = 4,
         min_individual_number: int = 2,
         min_cell_number: int = 10,
-        min_tcr_similarity_score: Optional[float] = None,
+        min_tcr_convergence_score: Optional[float] = None,
         min_disease_association_score: Optional[float] = None,
         return_background_tcrs: bool = False,
         additional_label_key_values: Optional[Dict[str, List[str]]] = None
@@ -215,7 +258,7 @@ class TDIResult:
         :param min_tcr_number: the minimum number of unique tcrs in the cluster
         :param min_individual_number: the minimum number of individuals in the cluster
         :param min_cell_number: the minimum number of cells in the cluster
-        :param min_tcr_similarity_score: the minimum tcr similarity score
+        :param min_tcr_convergence_score: the minimum convergence score
         :param min_disease_association_score: the minimum disease specificity score
         :param return_background_tcrs: whether to return other tcrs in the cluster
         :param additional_label_key_values: additional label key values to filter the cluster
@@ -230,12 +273,12 @@ class TDIResult:
             min_tcr_number=min_tcr_number, 
             min_individual_number=min_individual_number,
             min_cell_number=min_cell_number,
-            min_tcr_similarity_score = min_tcr_similarity_score,
+            min_tcr_convergence_score = min_tcr_convergence_score,
             min_disease_association_score = min_disease_association_score,
             return_background_tcrs=return_background_tcrs,                
             additional_label_key_values=additional_label_key_values
         )
-    
+
     def to_pandas_dataframe_tcr(self):
         """
         Convert the cluster result to a pandas dataframe
@@ -247,19 +290,29 @@ class TDIResult:
         cluster_labels = []
         if self.cluster_label in self.data.obs.columns:
             for i,j in zip(self.data.obs.iloc[:,0],self.data.obs[self.cluster_label]):
-                ret.append(
-                    list(map(lambda x: x.split("="), filter(lambda x: x != '-', i.split(","))))
-                )
+                if isinstance(i, str):
+                    ret.append(
+                        list(map(lambda x: x.split("=")[:7], filter(lambda x: x != '-', i.split(","))))
+                    )
+                elif isinstance(i, list):
+                    ret.append(
+                        list(map(lambda x: (x.cdr3a, x.cdr3b, x.trav, x.traj, x.trbv, x.trbj, x.individual), i))
+                    )
                 cluster_indices.append([j] * len(ret[-1]))
                 cluster_labels.append([self.cluster_label] * len(ret[-1]))
             df = pd.DataFrame(FLATTEN(ret), columns = TRAB_DEFINITION + ['individual'])
             df['cluster_index'] = FLATTEN(cluster_indices)
             df['cluster_label'] = FLATTEN(cluster_labels)
         else:
-            for i,j in zip(self.data.obs.iloc[:,0],self.data.obs['cluster_index']):
-                ret.append(
-                    list(map(lambda x: x.split("="), filter(lambda x: x != '-', i.split(","))))
-                )
+            for i,j in zip(self.data.obs.iloc[:,0], self.data.obs['cluster_index']):
+                if isinstance(i, str):
+                    ret.append(
+                        list(map(lambda x: x.split("=")[:7], filter(lambda x: x != '-', i.split(","))))
+                    )
+                elif isinstance(i, list):
+                    ret.append(
+                        list(map(lambda x: (x.cdr3a, x.cdr3b, x.trav, x.traj, x.trbv, x.trbj, x.individual), i))
+                    )
                 cluster_indices.append([j] * len(ret[-1]))
             df = pd.DataFrame(FLATTEN(ret), columns = TRAB_DEFINITION + ['individual'])
             df['cluster_index'] = FLATTEN(cluster_indices)
@@ -271,20 +324,20 @@ class TDIResult:
     def _get_tcrs_for_cluster(
         self, 
         label: str, 
-        rank_by: Literal["tcr_similarity", "disease_association"] = 'tcr_similarity',
+        rank_by: Literal["convergence", "disease_association"] = 'convergence',
         rank: int = 0,
         min_tcr_number: int = 4,
         min_individual_number: int = 2,
         min_cell_number: int = 10,
-        min_tcr_similarity_score: Optional[float] = None,
+        min_tcr_convergence_score: Optional[float] = None,
         min_disease_association_score: Optional[float] = None,
         return_background_tcrs: bool = False,
         additional_label_key_values: Optional[Dict[str, List[str]]] = None
     ):
-        if rank_by not in ['tcr_similarity', 'disease_association']:
-            raise ValueError('rank_by must be one of ["tcr_similarity", "disease_association"], got {}'.format(rank_by))
-        
-        min_tcr_similarity_score = min_tcr_similarity_score if min_tcr_similarity_score is not None else -1
+        if rank_by not in ['convergence', 'disease_association']:
+            raise ValueError('rank_by must be one of ["convergence", "disease_association"], got {}'.format(rank_by))
+
+        min_tcr_convergence_score = min_tcr_convergence_score if min_tcr_convergence_score is not None else -1
         min_disease_association_score = min_disease_association_score if min_disease_association_score is not None else -1
         if additional_label_key_values is not None:
             additional_indices = np.bitwise_and.reduce(
@@ -294,12 +347,12 @@ class TDIResult:
             )
         else:
             additional_indices = np.ones(len(self.data.obs), dtype=bool)
-            
+
         result_tcr = self.data.obs[
             np.array(self.data.obs[self.cluster_label] == label) & 
             np.array(self.data.obs['count'] >= min_tcr_number) &
             np.array(self.data.obs['number_of_individuals'] >= min_individual_number) &
-            np.array(self.data.obs['tcr_similarity_score'] >= min_tcr_similarity_score) &
+            np.array(self.data.obs['tcr_convergence_score'] >= min_tcr_convergence_score) &
             np.array(self.data.obs['disease_association_score'] >= min_disease_association_score) &
             additional_indices
         ]
@@ -309,9 +362,9 @@ class TDIResult:
                 np.array(result_tcr['number_of_cells'] >= min_cell_number)
             ]
 
-        if rank_by == 'tcr_similarity':
+        if rank_by == 'convergence':
             result = result_tcr.sort_values(
-                'tcr_similarity_score', 
+                'tcr_convergence_score', 
                 ascending=False
             )
         elif rank_by == 'disease_association':
@@ -320,16 +373,16 @@ class TDIResult:
                 ascending=False
             )
 
-        tcrs = list(filter(lambda x: x != '-', result.iloc[rank,0].split(","))) 
+        tcrs = list(result.iloc[rank,0])
         cdr3a, cdr3b, trav, traj, trbv, trbj, individual = list(map(
             list, 
-            np.array(list(map(lambda x: x.split("="), tcrs))).T
+            np.array(list(map(lambda x: (x.cdr3a, x.cdr3b, x.trav, x.traj, x.trbv, x.trbj), tcrs))).T
         ))
 
         if return_background_tcrs:
             return {
                 'cluster_index': result['cluster_index'][rank],
-                'tcrs': tcrs,
+                'tcrs': list(map(lambda x: x.to_string(), tcrs)),
                 'cdr3a': cdr3a,
                 'cdr3b': cdr3b,
                 'trav': trav,
@@ -341,7 +394,7 @@ class TDIResult:
         else:
             return {
                 'cluster_index': result['cluster_index'][rank],
-                'tcrs': tcrs,
+                'tcrs': list(map(lambda x: x.to_string(), tcrs)),
                 'cdr3a': cdr3a,
                 'cdr3b': cdr3b,
                 'trav': trav,
@@ -350,7 +403,7 @@ class TDIResult:
                 'trbj': trbj,
                 'individual': individual
             }
-    
+
     def _get_tcrs_gex_embedding_coordinates(self, use_rep: str = 'X_umap') -> Dict[str, np.ndarray]:
         """
         Get the gex embedding coordinates for each tcr
@@ -373,7 +426,6 @@ class TDIResult:
 
         return coordinates
 
-            
     def get_tcrs_by_cluster_index(
         self, 
         cluster_index: int,
@@ -385,8 +437,8 @@ class TDIResult:
         :param cluster_index: the cluster index
         :param _n_after: the number of tcrs to skip
         """
-        _result = self.tcr_adata.obs.iloc[
-            self.data.uns['I'][int(cluster_index)]
+        _result = self.tcr_df.iloc[
+            self.I[int(cluster_index)]
         ]
         cdr3a = list(_result['CDR3a'])[_n_after:]
         cdr3b = list(_result['CDR3b'])[_n_after:]

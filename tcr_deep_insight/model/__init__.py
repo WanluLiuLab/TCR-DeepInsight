@@ -14,4 +14,9 @@ from .modeling_causal_lm import (
     TCRGenForCausalLM,
     TCRGenConfig
 )
+from ._constants import (
+    TCR_BERT_ENCODING,
+    TCR_BERT_POOLING
+)
+
 import tokenizers
