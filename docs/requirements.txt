@@ -1,5 +1,6 @@
 sphinx>=1.4
 sphinx_rtd_theme
+furo==2024.08.06
 sphinx-hoverxref
 sphinx-express
 ipykernel
@@ -37,4 +38,5 @@ scikit-learn==0.24.1
 einops==0.4.1 
 biopython==1.79
 scirpy==0.10.1
+
 logomaker
