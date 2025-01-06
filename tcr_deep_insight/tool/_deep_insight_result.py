@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union, Mapping
 import pandas as pd
 import scanpy as sc 
 import numpy as np 
@@ -7,11 +7,17 @@ import numpy as np
 import faiss
 from faiss import IndexFlatL2
 
+from ._constants import (
+    FAISS_INDEX_BACKEND,
+    TDI_RESULT_FIELD
+)
+
 from ..utils._compat import Literal
 from ..utils._logger import Colors, get_tqdm
 from ..utils._utilities import FLATTEN
 from ..utils._tcr_definitions import TRAB_DEFINITION
 from ..utils._tcr import TCR
+
 
 def check_is_parquet_serializable(obj: pd.DataFrame):
     for c in obj.columns:
@@ -20,6 +26,18 @@ def check_is_parquet_serializable(obj: pd.DataFrame):
         elif isinstance(obj[c].dtype, pd.CategoricalDtype):
             obj[c] = obj[c].astype(str)
     return obj
+
+class TDICluster(list):
+    @property
+    def number_of_unique_tcrs(self):
+        return len(list(map(lambda x: x.to_tcr_string(), self)))
+    
+    @property
+    def number_of_individuals(self):
+        return len(np.unique(list(map(lambda x: x.individual, self))))
+                   
+    def __repr__(self):
+        return f'<TDICluster at {hex(id(self))} with {len(self)} TCRs>'
 
 
 class TDIResult:
@@ -45,7 +63,8 @@ class TDIResult:
         faiss_index: Optional[IndexFlatL2] = None,
         low_memory: bool = False
     ):
-        self._data = _data 
+        self._data = _data
+        self._data.obs['TCRab'] = list(map(TDICluster, self._data.obs['TCRab']))
         self._tcr_df = _tcr_df
 
         self._tcr_adata = _tcr_adata
@@ -75,6 +94,23 @@ class TDIResult:
     @property
     def tcr_df(self):
         return self._tcr_df
+    
+    def __getattribute__(self, name):
+        if name in object.__getattribute__(self, '_data').obs.columns:
+            return object.__getattribute__(self, '_data').obs[name].to_numpy()
+        else:
+            return super().__getattribute__(name)
+        
+    def select(self, indices):
+        return TDIResult(
+            self._data[indices],
+            self._tcr_df,
+            self._tcr_adata,
+            self._gex_adata,
+            self._cluster_label,
+            self.faiss_index,
+            self.low_memory
+        )
 
     @cluster_label.setter
     def cluster_label(self, cluster_label: str):
@@ -97,20 +133,6 @@ class TDIResult:
     def gex_adata(self, gex_adata: sc.AnnData):
         self._gex_adata = gex_adata
 
-    def __repr__(self) -> str:
-        base_string = f'{Colors.GREEN}TDIResult{Colors.NC} object containing {Colors.CYAN}{self.data.shape[0]}{Colors.NC} clusters\n'
-
-        if self._cluster_label is not None:
-            base_string += f'     Cluster label: {self._cluster_label}\n'
-
-        if self._gex_adata is not None:
-            base_string += f'     GEX data: \n' +\
-                 '     ' + self._gex_adata.__repr__().replace('\n', '\n     ')
-        if self._tcr_adata is not None:
-            base_string += f'     TCR data: \n' +\
-                 '     ' + self._tcr_adata.__repr__().replace('\n', '\n     ') 
-        return base_string
-
     def calculate_cluster_additional_information(self):
 
         self.data.obs['unique_tra'] = list(map(lambda x: 
@@ -132,6 +154,22 @@ class TDIResult:
                     x
             ))), self.data.obs['TCRab']
         ))
+
+
+    def __repr__(self) -> str:
+        base_string = f'{Colors.GREEN}TDIResult{Colors.NC} object containing {Colors.CYAN}{self.data.shape[0]}{Colors.NC} clusters\n'
+
+        if self._cluster_label is not None:
+            base_string += f'     Cluster label: {self._cluster_label}\n'
+
+        if self._gex_adata is not None:
+            base_string += f'     GEX data: \n' +\
+                 '     ' + self._gex_adata.__repr__().replace('\n', '\n     ')
+        if self._tcr_adata is not None:
+            base_string += f'     TCR data: \n' +\
+                 '     ' + self._tcr_adata.__repr__().replace('\n', '\n     ') 
+        return base_string
+
 
     def save_to_disk(self, 
         save_path, 
@@ -204,6 +242,7 @@ class TDIResult:
                 data.obs["TCRab"],
             )
         )
+        tcr_df = None
         if os.path.exists(os.path.join(save_path, 'tcr_data.parquet')):
             tcr_df = pd.read_parquet(os.path.join(save_path, 'tcr_data.parquet'))
         if tcr_data_path is not None:
@@ -238,10 +277,10 @@ class TDIResult:
 
     def get_tcrs_for_cluster(
         self,
-        label: str,
+        label: Optional[Union[Mapping[str, str], Mapping[str, List[str]]]] = None,
         rank: int = 0, 
         rank_by: Literal["convergence", "disease_association"] = 'convergence',
-        min_tcr_number: int = 4,
+        min_unique_tcr_number: int = 4,
         min_individual_number: int = 2,
         min_cell_number: int = 10,
         min_tcr_convergence_score: Optional[float] = None,
@@ -255,7 +294,7 @@ class TDIResult:
         :param label: the cluster label
         :param rank: the rank of the tcrs to return
         :param rank_by: the metric to rank the tcrs
-        :param min_tcr_number: the minimum number of unique tcrs in the cluster
+        :param min_unique_tcr_number: the minimum number of unique tcrs in the cluster
         :param min_individual_number: the minimum number of individuals in the cluster
         :param min_cell_number: the minimum number of cells in the cluster
         :param min_tcr_convergence_score: the minimum convergence score
@@ -270,7 +309,7 @@ class TDIResult:
             label, 
             rank_by,
             rank, 
-            min_tcr_number=min_tcr_number, 
+            min_unique_tcr_number=min_unique_tcr_number, 
             min_individual_number=min_individual_number,
             min_cell_number=min_cell_number,
             min_tcr_convergence_score = min_tcr_convergence_score,
@@ -279,7 +318,7 @@ class TDIResult:
             additional_label_key_values=additional_label_key_values
         )
 
-    def to_pandas_dataframe_tcr(self):
+    def to_pandas_dataframe_tcr(self, return_background_tcrs: bool = False):
         """
         Convert the cluster result to a pandas dataframe
 
@@ -289,44 +328,108 @@ class TDIResult:
         cluster_indices = []
         cluster_labels = []
         if self.cluster_label in self.data.obs.columns:
-            for i,j in zip(self.data.obs.iloc[:,0],self.data.obs[self.cluster_label]):
+            for i, l, j in zip(
+                self.data.obs.iloc[:, 0],
+                self.data.obs[self.cluster_label],
+                self.data.obs["cluster_index"],
+            ):
                 if isinstance(i, str):
                     ret.append(
-                        list(map(lambda x: x.split("=")[:7], filter(lambda x: x != '-', i.split(","))))
+                        list(
+                            map(
+                                lambda x: x.split("=")[:7] + ['foreground'],
+                                filter(lambda x: x != "-", i.split(",")),
+                            )
+                        )
                     )
                 elif isinstance(i, list):
                     ret.append(
-                        list(map(lambda x: (x.cdr3a, x.cdr3b, x.trav, x.traj, x.trbv, x.trbj, x.individual), i))
+                        list(
+                            map(
+                                lambda x: (
+                                    x.cdr3a,
+                                    x.cdr3b,
+                                    x.trav,
+                                    x.traj,
+                                    x.trbv,
+                                    x.trbj,
+                                    x.individual,
+                                    'foreground'
+                                ),
+                                i,
+                            )
+                        )
                     )
                 cluster_indices.append([j] * len(ret[-1]))
-                cluster_labels.append([self.cluster_label] * len(ret[-1]))
-            df = pd.DataFrame(FLATTEN(ret), columns = TRAB_DEFINITION + ['individual'])
-            df['cluster_index'] = FLATTEN(cluster_indices)
-            df['cluster_label'] = FLATTEN(cluster_labels)
+                cluster_labels.append([l] * len(ret[-1]))
+                size = len(ret[-1])
+                if return_background_tcrs:
+                    cluster_labels.append([])
+                    ret.append([])
+                    tcr_clusters = self.get_tcrs_by_cluster_index(j)
+                    c = 0
+                    for i, background_l in zip(tcr_clusters['tcrs'], tcr_clusters['labels']):
+                        if background_l != l:
+                            ret[-1].append(i.split("=")[:7] + ['background'])
+                            c += 1
+                            cluster_labels[-1].append(background_l)
+                            if c == size:
+                                break
+                    cluster_indices.append([j] * c)
+
+            df = pd.DataFrame(FLATTEN(ret), columns=TRAB_DEFINITION + ["individual", "type"])
+            df["cluster_index"] = FLATTEN(cluster_indices)
+            df["cluster_label"] = FLATTEN(cluster_labels)
         else:
-            for i,j in zip(self.data.obs.iloc[:,0], self.data.obs['cluster_index']):
+            for i, j in zip(self.data.obs.iloc[:, 0], self.data.obs["cluster_index"]):
                 if isinstance(i, str):
                     ret.append(
-                        list(map(lambda x: x.split("=")[:7], filter(lambda x: x != '-', i.split(","))))
+                        list(
+                            map(
+                                lambda x: x.split("=")[:7],
+                                filter(lambda x: x != "-", i.split(",")),
+                            )
+                        )
                     )
                 elif isinstance(i, list):
                     ret.append(
-                        list(map(lambda x: (x.cdr3a, x.cdr3b, x.trav, x.traj, x.trbv, x.trbj, x.individual), i))
+                        list(
+                            map(
+                                lambda x: (
+                                    x.cdr3a,
+                                    x.cdr3b,
+                                    x.trav,
+                                    x.traj,
+                                    x.trbv,
+                                    x.trbj,
+                                    x.individual,
+                                ),
+                                i,
+                            )
+                        )
                     )
                 cluster_indices.append([j] * len(ret[-1]))
-            df = pd.DataFrame(FLATTEN(ret), columns = TRAB_DEFINITION + ['individual'])
-            df['cluster_index'] = FLATTEN(cluster_indices)
+            df = pd.DataFrame(FLATTEN(ret), columns=TRAB_DEFINITION + ["individual"])
+            df["cluster_index"] = FLATTEN(cluster_indices)
         return df
 
     def to_pandas_dataframe_cluster_index(self):
-        return self.data.obs.loc[:,['cluster_index'] + list(filter(lambda x: x not in ['cluster_index','TCRab'], self.data.obs.columns))]
+        return self.data.obs.loc[
+            :,
+            ["cluster_index"]
+            + list(
+                filter(
+                    lambda x: x not in ["cluster_index", "TCRab"], self.data.obs.columns
+                )
+            ),
+        ]
 
     def _get_tcrs_for_cluster(
         self, 
-        label: str, 
-        rank_by: Literal["convergence", "disease_association"] = 'convergence',
+        label: Optional[str] = None, 
+        rank_by: Literal["convergence", "disease_association", "individual", "unique_tcr"] = 'convergence',
         rank: int = 0,
-        min_tcr_number: int = 4,
+        min_unique_tcr_number: int = 4,
         min_individual_number: int = 2,
         min_cell_number: int = 10,
         min_tcr_convergence_score: Optional[float] = None,
@@ -334,7 +437,7 @@ class TDIResult:
         return_background_tcrs: bool = False,
         additional_label_key_values: Optional[Dict[str, List[str]]] = None
     ):
-        if rank_by not in ['convergence', 'disease_association']:
+        if rank_by not in ['convergence', 'disease_association', "individual", "unique_tcr"]:
             raise ValueError('rank_by must be one of ["convergence", "disease_association"], got {}'.format(rank_by))
 
         min_tcr_convergence_score = min_tcr_convergence_score if min_tcr_convergence_score is not None else -1
@@ -348,23 +451,37 @@ class TDIResult:
         else:
             additional_indices = np.ones(len(self.data.obs), dtype=bool)
 
-        result_tcr = self.data.obs[
-            np.array(self.data.obs[self.cluster_label] == label) & 
-            np.array(self.data.obs['count'] >= min_tcr_number) &
-            np.array(self.data.obs['number_of_individuals'] >= min_individual_number) &
-            np.array(self.data.obs['tcr_convergence_score'] >= min_tcr_convergence_score) &
-            np.array(self.data.obs['disease_association_score'] >= min_disease_association_score) &
-            additional_indices
-        ]
+        if label is not None:
+            label_criteria = np.bitwise_and.reduce([
+                np.array(self.data.obs[k] == v)
+                if type(v) == str
+                else np.array(self.data.obs[k].isin(v)) for k, v in label.items()])
 
-        if 'number_of_cells' in result_tcr.columns:
+            result_tcr = self.data.obs[
+                label_criteria & 
+                np.array(self.data.obs[TDI_RESULT_FIELD.NUMBER_OF_UNIQUE_TCR] >= min_unique_tcr_number) &
+                np.array(self.data.obs[TDI_RESULT_FIELD.NUMBER_OF_INDIVIDUAL] >= min_individual_number) &
+                np.array(self.data.obs[TDI_RESULT_FIELD.CONVERGENCE] >= min_tcr_convergence_score) &
+                np.array(self.data.obs[TDI_RESULT_FIELD.DISEASE_ASSOCIATION] >= min_disease_association_score) &
+                additional_indices
+            ]
+        else:
+            result_tcr = self.data.obs[
+                np.array(self.data.obs[TDI_RESULT_FIELD.NUMBER_OF_UNIQUE_TCR] >= min_unique_tcr_number) &
+                np.array(self.data.obs[TDI_RESULT_FIELD.NUMBER_OF_INDIVIDUAL] >= min_individual_number) &
+                np.array(self.data.obs[TDI_RESULT_FIELD.CONVERGENCE] >= min_tcr_convergence_score) &
+                np.array(self.data.obs[TDI_RESULT_FIELD.DISEASE_ASSOCIATION] >= min_disease_association_score) &
+                additional_indices
+            ]
+
+        if TDI_RESULT_FIELD.NUMBER_OF_CELL in result_tcr.columns:
             result_tcr = result_tcr[
-                np.array(result_tcr['number_of_cells'] >= min_cell_number)
+                np.array(result_tcr[TDI_RESULT_FIELD.NUMBER_OF_CELL] >= min_cell_number)
             ]
 
         if rank_by == 'convergence':
             result = result_tcr.sort_values(
-                'tcr_convergence_score', 
+                TDI_RESULT_FIELD.CONVERGENCE, 
                 ascending=False
             )
         elif rank_by == 'disease_association':
@@ -372,17 +489,27 @@ class TDIResult:
                 'disease_association_score', 
                 ascending=False
             )
+        elif rank_by == 'individual':
+            result = result_tcr.sort_values(
+                'number_of_individuals', 
+                ascending=False
+            )
+        elif rank_by == 'unique_tcr':
+            result = result_tcr.sort_values(
+                'number_of_unique_tcrs', 
+                ascending=False
+            )
 
-        tcrs = list(result.iloc[rank,0])
+        tcrs = result.iloc[rank,0]
         cdr3a, cdr3b, trav, traj, trbv, trbj, individual = list(map(
             list, 
-            np.array(list(map(lambda x: (x.cdr3a, x.cdr3b, x.trav, x.traj, x.trbv, x.trbj), tcrs))).T
+            np.array(list(map(lambda x: (x.cdr3a, x.cdr3b, x.trav, x.traj, x.trbv, x.trbj, x.individual), tcrs))).T
         ))
 
         if return_background_tcrs:
             return {
                 'cluster_index': result['cluster_index'][rank],
-                'tcrs': list(map(lambda x: x.to_string(), tcrs)),
+                'tcrs': tcrs,
                 'cdr3a': cdr3a,
                 'cdr3b': cdr3b,
                 'trav': trav,
@@ -394,7 +521,7 @@ class TDIResult:
         else:
             return {
                 'cluster_index': result['cluster_index'][rank],
-                'tcrs': list(map(lambda x: x.to_string(), tcrs)),
+                'tcrs': tcrs,
                 'cdr3a': cdr3a,
                 'cdr3b': cdr3b,
                 'trav': trav,

@@ -2,6 +2,10 @@ from ._metadata import __version__, within_flit
 import importlib
 import subprocess
 import warnings
+from numba import NumbaDeprecationWarning
+
+# Ignore NumbaDeprecationWarning
+warnings.filterwarnings("ignore", category=NumbaDeprecationWarning)
 
 try:
     subprocess.run('mafft --version'.split(), capture_output=True)

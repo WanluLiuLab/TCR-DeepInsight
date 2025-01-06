@@ -83,6 +83,7 @@ from ..model._constants import (
 )
 from ._constants import (
     FAISS_INDEX_BACKEND,
+    TDI_RESULT_FIELD
 )
 from ..utils._definitions import SPECIES
 
@@ -113,19 +114,19 @@ def add_tcr_pseudosequence_to_dataframe(
             raise ValueError(f"Column {i} not found in adata.obs.columns")
     # Check if all TRAV, TRAJ, TRBV, TRBJ genes are valid
     all_trav = np.unique(df["TRAV"])
-    not_found = list(filter(lambda x: x not in getattr(TCRAnnotations, species).TRAV_KEYS, all_trav))
+    not_found = list(filter(lambda x: x not in getattr(TCRAnnotations, species).TRAV_GENES, all_trav))
     if len(not_found) > 0:
         raise ValueError(f"Not all TRAV genes are valid for {species}. Found {not_found}")
     all_traj = np.unique(df["TRAJ"])
-    not_found = list(filter(lambda x: x not in getattr(TCRAnnotations, species).TRAJ_KEYS, all_traj))
+    not_found = list(filter(lambda x: x not in getattr(TCRAnnotations, species).TRAJ_GENES, all_traj))
     if len(not_found) > 0:
         raise ValueError(f"Not all TRAJ genes are valid for {species}. Found {not_found}")
     all_trbv = np.unique(df["TRBV"])
-    not_found = list(filter(lambda x: x not in getattr(TCRAnnotations, species).TRBV_KEYS, all_trbv))
+    not_found = list(filter(lambda x: x not in getattr(TCRAnnotations, species).TRBV_GENES, all_trbv))
     if len(not_found) > 0:
         raise ValueError(f"Not all TRBV genes are valid for {species}. Found {not_found}")
     all_trbj = np.unique(df["TRBJ"])
-    not_found = list(filter(lambda x: x not in getattr(TCRAnnotations, species).TRBJ_KEYS, all_trbj))
+    not_found = list(filter(lambda x: x not in getattr(TCRAnnotations, species).TRBJ_GENES, all_trbj))
     if len(not_found) > 0:
         raise ValueError(f"Not all TRBJ genes are valid for {species}. Found {not_found}")
 
@@ -756,7 +757,7 @@ def _cluster_tcr_by_label_core(
                 if k not in df.columns:
                     raise ValueError(f"Column {k} not found in dataframe columns")
 
-    mt("Building Faiss index" + f"using GPU{gpu}" if use_gpu else "Using CPU")
+    mt("Building Faiss index " + f"using GPU{gpu}" if use_gpu else "Using CPU")
     all_tcr_gex_embedding = all_tcr_gex_embedding.astype(np.float32)
     query_tcr_gex_embedding = query_tcr_gex_embedding.astype(np.float32)
 
@@ -826,7 +827,7 @@ def _cluster_tcr_by_label_core(
     if include_hla_keys is not None:
         hla_map = {key: dict(zip(range(len(df)), df.loc[:, val].to_numpy())) for key, val in include_hla_keys.items()}
 
-    cell_number_map = dict(zip(range(len(df)), df["number_of_cell"]))
+    cell_number_map = dict(zip(range(len(df)), df[TDI_RESULT_FIELD.NUMBER_OF_CELL.value]))
 
     mt("Iterative select TCRs as clustering anchors")
 
@@ -943,7 +944,6 @@ def _cluster_tcr_by_label_core(
             )(
                 delayed(par_func)(x) for x in partition(list(range(I.shape[0])), n_jobs, nk=nk)
             ))
-            
 
     else:
         ret = []
@@ -1139,7 +1139,7 @@ def _cluster_tcr_by_label_core(
                     lambda x: partial(TCR, species=species)(*list(df.iloc[x].loc[['CDR3a','CDR3b','TRAV','TRBV','TRAJ','TRBJ','individual']].to_numpy().flatten())) if x >= 0 else None
                 )
 
-        result_tcr["number_of_individuals"] = list(
+        result_tcr[TDI_RESULT_FIELD.NUMBER_OF_INDIVIDUAL.value] = list(
             map(
                 lambda x: len(
                     np.unique(
@@ -1155,7 +1155,7 @@ def _cluster_tcr_by_label_core(
             )
         )
 
-        result_tcr["number_of_unique_tcrs"] = list(
+        result_tcr[TDI_RESULT_FIELD.NUMBER_OF_UNIQUE_TCR.value] = list(
             map(
                 lambda x: len(
                     np.unique(
@@ -1172,13 +1172,13 @@ def _cluster_tcr_by_label_core(
         )
 
         offset=8
-        if "number_of_cells" in df.columns:
-            all_number_of_cell = df["number_of_cells"].to_numpy()
+        if TDI_RESULT_FIELD.NUMBER_OF_CELL.value in df.columns:
+            all_number_of_cell = df[TDI_RESULT_FIELD.NUMBER_OF_CELL.value].to_numpy()
             for i in list(range(1, max_cluster_size_ + 1))[::-1]:
                 result_cell_number.iloc[:, i] = result_cell_number.iloc[:, i].apply(
                     lambda x: all_number_of_cell[x] if x >= 0 else 0
                 )
-            result_tcr["number_of_cells"] = result_cell_number.iloc[
+            result_tcr[TDI_RESULT_FIELD.NUMBER_OF_CELL.value] = result_cell_number.iloc[
                 :, 1 : max_cluster_size_ + 1
             ].sum(axis=1)
             offset += 1
@@ -1188,23 +1188,23 @@ def _cluster_tcr_by_label_core(
             [label_key]
             + [f"TCRab{x}" for x in range(1, result_tcr.shape[1] - offset)]
             + [
-                "number_of_tcrs",
+                TDI_RESULT_FIELD.NUMBER_OF_TCR.value,
                 "mean_distance",
                 "mean_distance_other",
                 "distance_difference",
                 "cluster_index",
                 "same_hla",
-                "number_of_individuals",
-                "number_of_unique_tcrs",
+                TDI_RESULT_FIELD.NUMBER_OF_INDIVIDUAL.value,
+                TDI_RESULT_FIELD.NUMBER_OF_UNIQUE_TCR.value,
             ]
-            + (["number_of_cells"] if "number_of_cells" in df.columns else [])
+            + ([TDI_RESULT_FIELD.NUMBER_OF_CELL.value] if TDI_RESULT_FIELD.NUMBER_OF_CELL.value in df.columns else [])
         )
 
-        # result_tcr = result_tcr[result_tcr['number_of_unique_tcrs'] > 1]
+        # result_tcr = result_tcr[result_tcr[TDI_RESULT_FIELD.NUMBER_OF_UNIQUE_TCR.value] > 1]
         # result_tcr = result_tcr[result_tcr['mean_distance'] > 1e-3]
 
-        result_tcr["disease_association_score"] = result_tcr["distance_difference"]
-        result_tcr["tcr_convergence_score"] = result_tcr["mean_distance"]
+        result_tcr[TDI_RESULT_FIELD.DISEASE_ASSOCIATION.value] = result_tcr["distance_difference"]
+        result_tcr[TDI_RESULT_FIELD.CONVERGENCE.value] = result_tcr["mean_distance"]
 
         if calculate_tcr_gex_distance:
             a = time.time()

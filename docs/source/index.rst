@@ -20,6 +20,31 @@
 Welcome to TCR-DeepInsight's documentation!
 ============================================
 
+.. card:: Installation :octicon:`plug;1em;`
+    :link: install
+    :link-type: doc
+
+    Click here to view a brief *TCR-DeepInsight* installation guide.
+
+
+.. card:: Installation :octicon:`plug;1em;`
+    :link: api
+    :link-type: doc
+
+    Click here to view a brief *TCR-DeepInsight* API documentation
+
+
+.. card:: Installation :octicon:`plug;1em;`
+    :link: knowledge
+    :link-type: doc
+
+    Click here to view a *TCR-DeepInsight* knowledge base.
+
+.. card:: GitHub :octicon:`mark-github;1em;`
+    :link: https://github.com/WanluLiuLab/TCR-DeepInsight
+
+    Ask questions, report bugs, and contribute to *TCR-DeepInsight* at our GitHub repository.
+
 Contents
 --------
 .. toctree::

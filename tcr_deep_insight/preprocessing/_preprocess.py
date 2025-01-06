@@ -168,7 +168,7 @@ def unique_tcr_by_individual(
     if label_key:
         tcr_adata.obs[label_key] = list(agg_index[label_key])
 
-    tcr_adata.obs['number_of_cell'] = list(map(len, agg_index['index']))
+    tcr_adata.obs['number_of_cells'] = list(map(len, agg_index['index']))
         
     if additional_label_keys is not None:
         for k in additional_label_keys:
