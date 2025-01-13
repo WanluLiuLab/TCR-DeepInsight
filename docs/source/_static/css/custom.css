@@ -7,6 +7,14 @@ h6 {
     margin-top: 16px;
 }
 
+.content {
+    width: 60rem;
+}
+
+.sidebar-container, .toc-drawer {
+    wdith: 25rem;
+}
+
 .output_area img {
     max-width: 500px !important;
 }
@@ -100,6 +108,18 @@ pre {
     text-indent: 2.5em;
 }
 
+.py.class em {
+    white-space: pre;
+    display: inline;
+}
+
+.py.class em.sig-param::before {
+    content: "";
+    display: block; /* Forces a line break */
+    text-indent: 2.5em;
+}
+
+
 .sig-paren::before {
     content: "";
     display: var(--line-break-content, inline);
@@ -108,4 +128,14 @@ pre {
 
 .sig-inline, code.literal {
     background: none;
+}
+
+.sig:not(.sig-inline) {
+    text-indent: 0;
+}
+
+.remove-before::before {
+    content: none !important;
+    text-indent: 0 !important;
+    display: inline !important;
 }
