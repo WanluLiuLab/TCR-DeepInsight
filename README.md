@@ -12,7 +12,7 @@ We aims to build the most comprehensive atlas containing matched transcriptome a
 
 
 - In 2023, we make the first release of an integrated datasets containing more than 1,000,000 hcT cells with full length TCR sequence.
-- In 2024, we will release the second version of the atlas with more than 20,000,000 hcT cells with full length TCR sequence, which is available at [Zenodo](https://zenodo.org/uploads/12176396).
+- In 2024, we will release the second version of the atlas with more than 20,000,000 hcT cells with full length TCR sequence, which is available at [Zenodo](https://zenodo.org/uploads/12741480).
 
 
 ## Introduction to TCR-DeepInsight

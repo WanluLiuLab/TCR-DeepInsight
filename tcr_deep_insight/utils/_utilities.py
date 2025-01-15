@@ -249,7 +249,7 @@ def read_tsv(path, header:bool = True, skip_first_line: bool = False, return_pan
         else:
             return result
 
-def default_aggrf(i, ambiguous="Ambiguous"):
+def majority_vote(i, ambiguous="Ambiguous"):
     if len(np.unique(i)) == 1:
         return i[0]
     if len(i) == 2:

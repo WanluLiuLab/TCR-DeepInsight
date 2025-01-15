@@ -74,7 +74,7 @@ from ..utils._tcr_definitions import (
     TCRAnnotations
 )
 from ..utils._logger import mt
-from ..utils._utilities import default_aggrf, default_pure_criteria
+from ..utils._utilities import majority_vote, default_pure_criteria
 from ..utils._utilities import nearest_neighbor_eucliean_distances
 
 from ..model._constants import (
@@ -550,7 +550,7 @@ def cluster_tcr(
     faiss_index_backend: FAISS_INDEX_BACKEND = FAISS_INDEX_BACKEND.KMEANS
 ) -> TDIResult:
     """
-    Cluster TCRs by joint TCR-GEX embedding.
+    Cluster TCRs by joint TCR-GEX embedding. All TCRs will be used as cluster anchors.
 
     :param tcr_adata: AnnData object containing TCR data
     :param label_key: Key of the label to cluster. Should be in `tcr_adata.obs`
@@ -613,8 +613,8 @@ def cluster_tcr_from_reference(
     tcr_reference_adata: sc.AnnData,
     label_key: str = None,  
     include_hla_keys: Optional[Iterable[str]] = None,
-    use_gpu=False,
-    gpu=0,
+    use_gpu: bool = False,
+    gpu: int = 0,
     layer_norm: bool = True,
     pure_label: bool = True,
     pure_criteria: Callable = default_pure_criteria,
@@ -632,7 +632,7 @@ def cluster_tcr_from_reference(
     faiss_index_backend: FAISS_INDEX_BACKEND = FAISS_INDEX_BACKEND.KMEANS
 ) -> TDIResult:
     """
-    Cluster TCRs from reference. 
+    Cluster TCRs from reference. Only TCRs in the query dataset will be used as cluster anchors.
 
     :param tcr_adata: AnnData object containing TCR data
     :param tcr_reference_adata: AnnData object containing reference TCR data
@@ -1204,7 +1204,8 @@ def _cluster_tcr_by_label_core(
         # result_tcr = result_tcr[result_tcr['mean_distance'] > 1e-3]
 
         result_tcr[TDI_RESULT_FIELD.DISEASE_ASSOCIATION.value] = result_tcr["distance_difference"]
-        result_tcr[TDI_RESULT_FIELD.CONVERGENCE.value] = result_tcr["mean_distance"]
+        # Takes negative of convergence score
+        result_tcr[TDI_RESULT_FIELD.CONVERGENCE.value] = -result_tcr["mean_distance"]
 
         if calculate_tcr_gex_distance:
             a = time.time()
@@ -1275,7 +1276,7 @@ def inject_labels_for_tcr_cluster_adata(
     reference_data: Union[sc.AnnData, pd.DataFrame], 
     tcr_cluster_adata: sc.AnnData, 
     label_key: str, 
-    map_function: Callable = default_aggrf
+    map_function: Callable = majority_vote
 ):
     """
     Inject labels for tcr_cluster_adata based on reference_adata

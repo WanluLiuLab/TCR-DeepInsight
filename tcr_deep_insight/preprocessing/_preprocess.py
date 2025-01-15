@@ -14,7 +14,7 @@ from ..utils._tcr_definitions import (
     TRAB_DEFINITION,
     TRB_DEFINITION,
 )
-from ..utils._utilities import default_aggrf
+from ..utils._utilities import majority_vote
 
 @typed({
     'gex_adata': sc.AnnData, 
@@ -27,17 +27,14 @@ def update_anndata(
     gex_embedding_key: str = 'X_gex',
     tcr_embedding_key: str = 'X_tcr',
     joint_embedding_key: str = 'X_gex_tcr',
-):
+) -> None:
     """
     Update the adata with the embedding keys
 
     .. note::
+        TCR information should be included in gex_adata.obs.
         This method modifies the `gex_adata` inplace. 
         added columns in .obs: `tcr`, `CDR3a`, `CDR3b`, `TRAV`, `TRAJ`, `TRBV`, `TRBJ`
-
-    .. note::
-        `"tcr"` should be in `gex_adata.obs.columns`.
-
 
     :param gex_adata: AnnData object
     :param gex_embedding_key: embedding key for gex
@@ -112,22 +109,27 @@ def unique_tcr_by_individual(
     embedding_key: Union[str, Iterable[str]] = 'X_gex',
     label_key: Optional[str] = None,
     additional_label_keys: Iterable[str] = None,
-    aggregate_func: Callable = default_aggrf
-):
+    aggregate_func: Callable = majority_vote
+) -> sc.AnnData:
     """
     Unique TCRs by individual and aggregate GEX embedding by TCR. Unique TCR is defined by the combination of TRAV,TRAJ,TRBV,TRBJ,CDR3α,CDR3β and individual. 
     Also aggregate GEX embedding by TCR, and add the aggregated GEX embedding to the tcr_adata.obsm[gex_embedding_key].
+
     
+    .. note::
+        `"individual"` should be in `gex_adata.obs.columns`.
+
     :param gex_adata: AnnData object of gene expression data
     :param embedding_key: Key(s) in adata.obsm where GEX embedding is stored. Default: 'X_gex'
     :param label_key: Key in adata.obs where TCR type abels are stored. Default: 'cell_type', where 'cell_type' should be included in adata.obs.columns
     :param additional_label_keys: Additional keys in adata.obs where TCR type labels are stored. Default: None
-    :param map_function: Function to map TCR type labels. Default: default_aggrf
+    :param map_function: Function to aggregate labels. Default: majority_vote
 
     :return: TCR adata
     """
     if "individual" not in gex_adata.obs.columns:
         raise ValueError("individual is not in adata.obs.columns")
+    
     
     gex_adata.obs['tcr'] = None
     gex_adata.obs.iloc[:, list(gex_adata.obs.columns).index("tcr")]=list(map(lambda x: '='.join(x), gex_adata.obs.loc[:,TRAB_DEFINITION + ['individual']].to_numpy()))

@@ -267,11 +267,13 @@ class TDIResult:
         if '_cluster_label' in data.uns:
             cluster_label = data.uns['_cluster_label']
 
+        faiss_index = None
+        
         if os.path.exists(os.path.join(save_path, 'faiss_index.faiss')):
             try:
                 faiss_index = faiss.read_index(os.path.join(save_path, 'faiss_index.faiss'))
             except:
-                faiss_index = None
+                pass
 
         return cls(data, tcr_df, tcr_adata, gex_adata, cluster_label, faiss_index=faiss_index)
 
@@ -318,15 +320,30 @@ class TDIResult:
             additional_label_key_values=additional_label_key_values
         )
 
-    def to_pandas_dataframe_tcr(self, return_background_tcrs: bool = False):
+    def to_pandas_dataframe_tcr(
+        self, 
+        rank_by: Literal["convergence", "disease_association", "individual", "unique_tcr"] = 'convergence',
+        return_background_tcrs: bool = False
+    ):
         """
-        Convert the cluster result to a pandas dataframe
+        Convert the cluster result to a pandas dataframe.
+
+        :param rank_by: the metric to rank the tcrs
+        :param return_background_tcrs: whether to return background tcrs for each cluster
 
         :return: a pandas dataframe containing the cluster result
         """
         ret = []
         cluster_indices = []
         cluster_labels = []
+        if rank_by == 'convergence':
+            self.data.obs.sort_values(TDI_RESULT_FIELD.CONVERGENCE.value, ascending=False, inplace=True)
+        elif rank_by == 'disease_association':
+            self.data.obs.sort_values(TDI_RESULT_FIELD.DISEASE_ASSOCIATION.value, ascending=True, inplace=True)
+        elif rank_by == 'individual':
+            self.data.obs.sort_values(TDI_RESULT_FIELD.NUMBER_OF_INDIVIDUAL.value, ascending=False, inplace=True)
+        elif rank_by == 'unique_tcr':
+            self.data.obs.sort_values(TDI_RESULT_FIELD.NUMBER_OF_UNIQUE_TCR.value, ascending=False, inplace=True)
         if self.cluster_label in self.data.obs.columns:
             for i, l, j in zip(
                 self.data.obs.iloc[:, 0],
