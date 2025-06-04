@@ -38,5 +38,6 @@ scikit-learn==0.24.1
 einops==0.4.1 
 biopython==1.79
 scirpy==0.10.1
-
+tqdm
+tqdm_joblib
 logomaker

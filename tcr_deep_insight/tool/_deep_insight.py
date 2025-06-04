@@ -556,11 +556,11 @@ def cluster_tcr(
     Cluster TCRs by joint TCR-GEX embedding. All TCRs will be used as cluster anchors.
 
     :param tcr_adata: AnnData object containing TCR data
-    :param label_key: Key of the label to cluster. Should be in `tcr_adata.obs`
+    :param label_key: Key of the label to cluster. Should be in `tcr_adata.obs.columns`
     :param use_gpu: Whether to use GPU.
     :param gpu: GPU ID if use_gpu.
     :param pure_label: Whether to constrain all TCRs in a cluster to have the same label.
-    :param pure_criteria: Pure criteria. A function that takes two arguments: a list of labels and a label to check if the list satisfies the criteria.
+    :param pure_criteria: Pure criteria. A function that takes two arguments: a list of labels and a label to check if the list satisfies the criteria. If pure_label is False, the function take place to determine whether a cluster is pure or not.
     :param same_trav: Whether to constrain all TCRs in a cluster to have the same TRAV gene.
     :param same_trbv: Whether to constrain all TCRs in a cluster to have the same TRBV gene.
     :param same_cdr3a_length: Whether to constrain all TCRs in a cluster to have the same CDR3a length.
@@ -572,8 +572,9 @@ def cluster_tcr(
     :param filter_intersection_fraction: Filter intersection fraction in pruning clusters that contain overlapping TCRs. 
     :param nk: Number of nearest neighbors for background comparison. Default: -1, which means background neighbors equal to cluster size
     :param calculate_perm_test: Whether to calculate p-values from permutation test. Default: True
+    :param species: Species name.
     :param n_jobs: Number of threads for parallel processing.
-    :param faiss_index_backend: Faiss index backend. Default: KMEANS
+    :param faiss_index_backend: Faiss index backend. Default: :ref:`FAISS_INDEX_BACKEND.KMEANS`
 
     :return: TDIResult containing clustered TCRs.
 
@@ -693,7 +694,7 @@ def cluster_tcr_from_reference(
     :param use_gpu: Whether to use GPU.
     :param gpu: GPU ID if use_gpu.
     :param pure_label: Whether to constrain all TCRs in a cluster to have the same label.
-    :param pure_criteria: Pure criteria. A function that takes two arguments: a list of labels and a label to check if the list satisfies the criteria.
+    :param pure_criteria: Pure criteria. A function that takes two arguments: a list of labels and a label to check if the list satisfies the criteria. If pure_label is False, the function take place to determine whether a cluster is pure or not.
     :param same_trav: Whether to constrain all TCRs in a cluster to have the same TRAV gene.
     :param same_trbv: Whether to constrain all TCRs in a cluster to have the same TRBV gene.
     :param same_cdr3a_length: Whether to constrain all TCRs in a cluster to have the same CDR3a length.
@@ -704,9 +705,10 @@ def cluster_tcr_from_reference(
     :param use_gex: Whether to use GEX embedding for clustering. 
     :param filter_intersection_fraction: Filter intersection fraction in pruning clusters that contain overlapping TCRs.
     :param nk: Number of nearest neighbors for background comparison. Default: -1, which means background neighbors equal to cluster size
-    calculate_perm_test: Whether to calculate morista horn permutation test for TCR clusters.
+    :param calculate_perm_test: Whether to calculate morista horn permutation test for TCR clusters.
     :param species: Species name.
     :param n_jobs: Number of threads for parallel processing. Default: 1
+    :param faiss_index_backend: Faiss index backend. Default: :ref:`FAISS_INDEX_BACKEND.KMEANS`
 
 
     :return: TDIResult object containing clustered TCRs.
