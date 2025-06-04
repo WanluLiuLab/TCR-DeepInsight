@@ -19,7 +19,7 @@ print(sys.version)
 # -- Project information -----------------------------------------------------
 
 project = 'TCR-DeepInsight'
-copyright = '2024, Ziwei Xue'
+copyright = '2025, Ziwei Xue'
 author = 'Ziwei Xue'
 
 repository_url = "https://github.com/WanluLiuLab/TCR-DeepInsight"

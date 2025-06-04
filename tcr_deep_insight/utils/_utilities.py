@@ -15,6 +15,7 @@ import contextlib
 import joblib
 from tqdm import tqdm
 
+
 from scatlasvae.utils._parallelizer import Parallelizer
 from scatlasvae.utils._decorators import deprecated
 

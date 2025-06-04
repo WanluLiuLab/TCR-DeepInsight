@@ -27,14 +27,14 @@ Welcome to TCR-DeepInsight's documentation!
     Click here to view a brief *TCR-DeepInsight* installation guide.
 
 
-.. card:: Installation :octicon:`plug;1em;`
+.. card:: API :octicon:`plug;1em;`
     :link: api
     :link-type: doc
 
     Click here to view a brief *TCR-DeepInsight* API documentation
 
 
-.. card:: Installation :octicon:`plug;1em;`
+.. card:: Knowledge base :octicon:`plug;1em;`
     :link: knowledge
     :link-type: doc
 

@@ -32,6 +32,7 @@ from transformers import (
     PreTrainedModel,
     BertForMaskedLM
 )
+from statsmodels.stats.multitest import multipletests
 
 from scatlasvae.model._primitives import *
 from scatlasvae.utils._tensor_utils import one_hot, get_k_elements
@@ -63,6 +64,7 @@ from ..model.modeling_bert._config import get_config, get_human_config, get_mous
 from ..utils._compat import Literal
 from ..utils._logger import mt, mw, get_tqdm
 from ..utils._utilities import partition, tqdm_joblib
+from tqdm_joblib import tqdm_joblib as tqdm_joblib_official
 from ..utils._tcr import TCR
 from ..utils._tcr_definitions import (
     TRA_DEFINITION_ORIG,
@@ -75,7 +77,7 @@ from ..utils._tcr_definitions import (
 )
 from ..utils._logger import mt
 from ..utils._utilities import majority_vote, default_pure_criteria
-from ..utils._utilities import nearest_neighbor_eucliean_distances
+from ..utils._utilities import euclidean, nearest_neighbor_eucliean_distances
 
 from ..model._constants import (
     TCR_BERT_ENCODING,
@@ -545,6 +547,7 @@ def cluster_tcr(
     use_gex: bool = True,
     filter_intersection_fraction: float = 0.7,
     nk: int = -1,
+    calculate_perm_test: bool = True,
     n_jobs: int = 1,
     species: SPECIES = SPECIES.HUMAN,
     faiss_index_backend: FAISS_INDEX_BACKEND = FAISS_INDEX_BACKEND.KMEANS
@@ -568,6 +571,7 @@ def cluster_tcr(
     :param use_gex: Whether to use GEX embedding for clustering. 
     :param filter_intersection_fraction: Filter intersection fraction in pruning clusters that contain overlapping TCRs. 
     :param nk: Number of nearest neighbors for background comparison. Default: -1, which means background neighbors equal to cluster size
+    :param calculate_perm_test: Whether to calculate p-values from permutation test. Default: True
     :param n_jobs: Number of threads for parallel processing.
     :param faiss_index_backend: Faiss index backend. Default: KMEANS
 
@@ -601,12 +605,60 @@ def cluster_tcr(
         max_cluster_size=max_cluster_size,
         nk=nk,
         filter_intersection_fraction=filter_intersection_fraction,
+        calculate_perm_test=calculate_perm_test,
         use_gpu=use_gpu,
         n_jobs=n_jobs,
         species=species,
         faiss_index_backend=faiss_index_backend
     )
     return result
+
+def morista_horn(tcr_cluster1, tcr_cluster2, sigma=4):
+    """
+    Calculate morista horn distance between two tcr clusters in embedding space
+    """
+    def match(a, b):
+        sum_ = 0
+        for i in a:
+            for j in b:
+                sum_ += np.power(np.e, -((euclidean(i, j)/sigma)**2))
+        return sum_ / (len(a) * len(b))
+    return (2 * match(tcr_cluster1, tcr_cluster2)) / (match(tcr_cluster1, tcr_cluster1) + match(tcr_cluster2, tcr_cluster2))
+
+def cluster_distance(tcr_cluster1, tcr_cluster2, sigma=None):
+    anchor = tcr_cluster1[0]
+    return np.mean([euclidean(anchor, x)**2 for x in tcr_cluster2]) - \
+        np.mean([euclidean(anchor, x)**2 for x in tcr_cluster1[1:]])
+
+def permutation_test(
+    tcr_cluster1, 
+    tcr_cluster2, 
+    sigma=4,
+    n_permutations=1000,
+    method: Literal["vanilla","morista_horn"] = "vanilla"
+):
+    if method == "vanilla":
+        observed = cluster_distance(tcr_cluster1, tcr_cluster2, sigma)
+    elif method == "morista_horn":
+        observed = morista_horn(tcr_cluster1, tcr_cluster2, sigma)
+    combined = np.concatenate([tcr_cluster1, tcr_cluster2])
+    n1 = len(tcr_cluster1)
+    mh_null = []
+    for _ in range(n_permutations):
+        np.random.shuffle(combined)
+        cluster1 = combined[:n1]
+        cluster2 = combined[n1:]
+        if method == "vanilla":
+            mh_null.append(cluster_distance(cluster1, cluster2, sigma))
+        elif method == "morista_horn":
+            mh_null.append(morista_horn(cluster1, cluster2, sigma))
+        else:
+            raise ValueError("Invalid method. Should be 'vanilla' or 'morista_horn'")
+    if method == "vanilla":
+        p_value = np.sum(np.array(mh_null) >= observed) / n_permutations
+    elif method == "morista_horn":
+        p_value = 1-(np.sum(np.array(mh_null) >= observed) / n_permutations)
+    return observed, p_value
 
 def cluster_tcr_from_reference(
     tcr_adata: sc.AnnData,
@@ -627,6 +679,7 @@ def cluster_tcr_from_reference(
     use_gex: bool = True,
     filter_intersection_fraction: float = 0.7,
     nk: int = -1,
+    calculate_perm_test: bool = True,
     n_jobs: int = 1,
     species: SPECIES = SPECIES.HUMAN,
     faiss_index_backend: FAISS_INDEX_BACKEND = FAISS_INDEX_BACKEND.KMEANS
@@ -649,8 +702,9 @@ def cluster_tcr_from_reference(
     :param max_distance: Maximum TrGx distance. Default: 4.
     :param max_cluster_size: Maximum cluster size for dTCR clusters.
     :param use_gex: Whether to use GEX embedding for clustering. 
-    :param filter_intersection_fraction: Filter intersection fraction in pruning clusters that contain overlapping TCRs. 
+    :param filter_intersection_fraction: Filter intersection fraction in pruning clusters that contain overlapping TCRs.
     :param nk: Number of nearest neighbors for background comparison. Default: -1, which means background neighbors equal to cluster size
+    calculate_perm_test: Whether to calculate morista horn permutation test for TCR clusters.
     :param species: Species name.
     :param n_jobs: Number of threads for parallel processing. Default: 1
 
@@ -697,6 +751,7 @@ def cluster_tcr_from_reference(
         max_cluster_size=max_cluster_size,
         nk=nk,
         filter_intersection_fraction=filter_intersection_fraction,
+        calculate_perm_test=calculate_perm_test,
         use_gpu=use_gpu,
         n_jobs=n_jobs,
         species=species,
@@ -744,6 +799,7 @@ def _cluster_tcr_by_label_core(
     max_distance: float = 4.,
     max_cluster_size: int = 40,
     calculate_tcr_gex_distance: bool = False,
+    calculate_perm_test: bool = True,
     n_jobs: int = 1,
     nk: int = -1,
     filter_intersection_fraction: float = 0.7,
@@ -780,7 +836,7 @@ def _cluster_tcr_by_label_core(
             )
         kmeans.cp.min_points_per_centroid = 1
         kmeans.cp.max_points_per_centroid = 1000000000
-            
+
         kmeans.train(all_tcr_gex_embedding, init_centroids=all_tcr_gex_embedding)
         D, I = kmeans.index.search(query_tcr_gex_embedding, max_cluster_size)
         index = kmeans.index
@@ -794,7 +850,7 @@ def _cluster_tcr_by_label_core(
             except:
                 use_gpu = False
                 mw("Warning: faiss GPU resources not found. Using CPU.")
-            
+
             mt("Moving Faiss index to GPU")
             index = faiss.index_cpu_to_gpu(res, gpu, index)
 
@@ -807,9 +863,8 @@ def _cluster_tcr_by_label_core(
         D, I = index.search(query_tcr_gex_embedding, max_cluster_size + offset)
     else:
         raise ValueError("Invalid faiss index backend")
-    
-    D = np.sqrt(D) # squared L2 distance to L1 distance
 
+    D = np.sqrt(D) # squared L2 distance to L1 distance
 
     CAT_STORAGE_SIZE = 10
     NUM_CAT_STORAGE = int(max_cluster_size / CAT_STORAGE_SIZE)
@@ -878,16 +933,17 @@ def _cluster_tcr_by_label_core(
                     d = label[0]
                     if pure_label:
                         pomc = list(filter(lambda x: label[x] == d, range(0, j)))
+                        cluster_size = len(pomc)
+                        comp_size = nk if nk > 0 else cluster_size
                         comp = list(
                             filter(lambda x: label[x] != d, range(1, max_cluster_size))
-                        )[:j]
+                        )[:comp_size]
                     else:
                         pomc = list(range(0, j))
-                        comp = list(range(j, max_cluster_size))[:j]
+                        cluster_size = len(pomc)
+                        comp_size = nk if nk > 0 else cluster_size
+                        comp = list(range(j, max_cluster_size))[:comp_size]
 
-                    cluster_size = len(pomc)
-                    
-                    comp_size = nk if nk > 0 else cluster_size
                     ret.append(
                         (
                             (cluster_size - 1) // CAT_STORAGE_SIZE,
@@ -919,7 +975,7 @@ def _cluster_tcr_by_label_core(
         if queue is not None:
             queue.put(0)
         return ret
-    
+
     mt(f"Clustering clonotypes using {n_jobs} partitions")
     start = time.time()
     if n_jobs > 1:
@@ -987,20 +1043,22 @@ def _cluster_tcr_by_label_core(
                             if all(list(map(lambda x: allele in x if any(map(lambda z: z != '-', x)) else True, hla[key]))):
                                 same_hla = True
                                 same_hla_keys.append(allele)
-                
+
                 if pure_criteria_pass or (not pure_label) and (same_hla or include_hla_keys is None) and tcr_criteria_pass:
                     d = label[0]
                     if pure_label:
                         pomc = list(filter(lambda x: label[x] == d, range(0, j)))
+                        cluster_size = len(pomc)
+                        comp_size = nk if nk > 0 else cluster_size
                         comp = list(
                             filter(lambda x: label[x] != d, range(1, max_cluster_size))
-                        )[:j]
+                        )[:comp_size]
                     else:
                         pomc = list(range(0, j))
-                        comp = list(range(j, max_cluster_size))[:j]
-                    cluster_size = len(pomc)
+                        cluster_size = len(pomc)
+                        comp_size = nk if nk > 0 else cluster_size
+                        comp = list(range(j, max_cluster_size))[:comp_size]
 
-                    comp_size = nk if nk > 0 else cluster_size
                     ret.append(
                         (
                             (cluster_size - 1) // CAT_STORAGE_SIZE,
@@ -1098,19 +1156,19 @@ def _cluster_tcr_by_label_core(
                             ] > result.iloc[
                                 i, max_cluster_size_ + 2
                             ]:
-                                    # this cluster is a subset of a already selected cluster
-                                    # and the selected cluster has a higher mean distance (i.e.
-                                    # lower tcr/gex similarity), remove the selected cluster
-                                    appeared_clusters.remove(k)
-                                    if indices_mapping[k] in selected_indices:
-                                        selected_indices.remove(indices_mapping[k])
-                                    for j in k:
-                                        if k in appeared_clusters_2[j]:
-                                            appeared_clusters_2[j].remove(k)
+                                # this cluster is a subset of a already selected cluster
+                                # and the selected cluster has a higher mean distance (i.e.
+                                # lower tcr/gex similarity), remove the selected cluster
+                                appeared_clusters.remove(k)
+                                if indices_mapping[k] in selected_indices:
+                                    selected_indices.remove(indices_mapping[k])
+                                for j in k:
+                                    if k in appeared_clusters_2[j]:
+                                        appeared_clusters_2[j].remove(k)
                             else:
                                 flag = True
                                 break
-                                
+
                         else:
                             flag = True
                             break
@@ -1132,7 +1190,7 @@ def _cluster_tcr_by_label_core(
 
         result_tcr = result.copy()
         result_cell_number = result.copy()
-        
+
         if not low_memory:
             for i in list(range(1, max_cluster_size_ + 1))[::-1]:
                 result_tcr.iloc[:, i] = result_tcr.iloc[:, i].apply(
@@ -1182,7 +1240,6 @@ def _cluster_tcr_by_label_core(
                 :, 1 : max_cluster_size_ + 1
             ].sum(axis=1)
             offset += 1
-
 
         result_tcr.columns = (
             [label_key]
@@ -1249,6 +1306,43 @@ def _cluster_tcr_by_label_core(
         all_result_tcr.append(result_tcr)
 
     result_tcr = pd.concat(all_result_tcr)
+
+    # This is a post-hoc step
+    # to calculate morista horn distance between TCR clusters
+    def compute_perm_pval(row, sigma=4):
+        d = row[label_key] if label_key is not None else 'undefined'
+        label = list(map(label_map.get, I[row['cluster_index']]))
+        pomc = list(filter(lambda x: label[x] == d, range(0, max_cluster_size)))[:len(row['TCRab'])]
+        comp = list(filter(lambda x: label[x] != d, range(1, max_cluster_size)))
+        mh_perm_pval = permutation_test(
+            all_tcr_gex_embedding[I[row['cluster_index']][pomc]],
+            all_tcr_gex_embedding[I[row['cluster_index']][comp]],
+            sigma=sigma
+        )
+        return mh_perm_pval[1]
+
+    # Create a helper function for progress reporting
+    def parallel_with_progress(executor, fn, items, **kwargs):
+        with tqdm.tqdm(total=len(items)) as pbar:
+            for i, res in enumerate(executor(fn, items, **kwargs)):
+                pbar.update()
+                yield res
+
+    if calculate_perm_test:
+        rows = list(result_tcr.T.to_dict().values())
+        all_perm_pval = []
+        pbar = tqdm.tqdm(
+            total=len(rows),
+            desc="computing permutation pval"
+        )
+        for row in rows:
+            all_perm_pval.append(compute_perm_pval(row))
+            pbar.update(1)
+        pbar.close()
+
+        result_tcr['mh_perm_pval'] = all_perm_pval
+        result_tcr['mh_perm_pval_adj'] = multipletests(all_perm_pval)[1]
+
     return TDIResult(
         _data=sc.AnnData(
             obs=result_tcr,

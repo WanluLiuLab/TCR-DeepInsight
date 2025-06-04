@@ -28,11 +28,43 @@ with convergene gene expression profile and TCR sequence (cGxTr-TCRαβ), accele
    :width: 600
    :align: center
 
-We defined a TCR/GEX (TrGx) convergence score to measure the similarity of GEX and TCR within a TCR cluster. We also defined a disease-association score to measure the disease association of a TCR cluster.
+The Euclidean distance is used to measure the similarity of TCR and GEX features within a TCR cluster.
 
+.. math::
+
+   \mathrm{TrGx}_{\mathrm{Distance}}(\bf{s_i},\bf{s_j})=\mathrm{EuclideanDistance}(\mathrm{TrGx}(\bf{s_i}),\mathrm{TrGx}(\bf{s_j}))
+
+
+We defined a TCR/GEX (TrGx) convergence score to measure the similarity of GEX and TCR within a TCR cluster. 
+
+.. math::
+
+   \mathrm{TrGx}_{\mathrm{Convergence}}=\frac{\sum_{i=1}^n \mathrm{TrGx}_{\mathrm{Distance}}(\bf{s_i},\bf{s_{\mathrm{anchor}}})}{n}
+
+
+We also defined a disease-association score to measure the disease association of a TCR cluster.
+
+.. math::
+
+   \mathrm{TrGx}_{\mathrm{Disease-association}}=\frac{\sum_{j=1}^m \mathrm{TrGx}_{\mathrm{Distance}}(\bf{s}_j,\bf{s_{\mathrm{anchor}}})-\sum_{i=1}^n \mathrm{TrGx}_{\mathrm{Distance}}(\bf{s}_i,\bf{s_{\mathrm{anchor}}})}{n+1}
+
+
+Dataset
+-------
+
+We use the huARdb atlas v2.5 datasets containing 2,298,878 GEX cells with 1,450,512 TCRαβ clonotypes.
+
+.. image:: static/images/dataset_2_5.svg
+   :width: 600
+   :align: center
+
+Which is available at `Zenodo <https://zenodo.org/records/12741480>`_.
 
 Update Plan  
 -----------
 
 Change log
 ~~~~~~~~~~
+
+- v1.0.2
+  - Add permutation test to `tcr_deep_insight.tl.cluster_tcr` and `cluster_tcr_from_reference` to determine the significance of the TCR clusters.

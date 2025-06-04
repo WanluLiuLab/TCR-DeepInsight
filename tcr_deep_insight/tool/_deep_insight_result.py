@@ -188,7 +188,7 @@ class TDIResult:
         if not os.path.exists(save_path):
             os.mkdir(save_path)
         column0 = None
-        if isinstance(self._data.obs['TCRab'][0], list):
+        if isinstance(self._data.obs['TCRab'].iloc[0], list):
             column0 = list(self._data.obs["TCRab"])
             self._data.obs["TCRab"] = list(
                 map(
@@ -199,8 +199,9 @@ class TDIResult:
         self._data.write_h5ad(os.path.join(save_path, 'cluster_data.h5ad'))
         if column0 is not None:
             self._data.obs["TCRab"] = column0
-        self._tcr_df = check_is_parquet_serializable(self._tcr_df)
-        self._tcr_df.to_parquet(os.path.join(save_path, 'tcr_data.parquet'))
+        if self._tcr_df is not None:
+            self._tcr_df = check_is_parquet_serializable(self._tcr_df)
+            self._tcr_df.to_parquet(os.path.join(save_path, 'tcr_data.parquet'))
         if save_tcr_data and self._tcr_adata is not None:
             self._tcr_adata.write_h5ad(os.path.join(save_path, 'tcr_data.h5ad'))
         if save_gex_data and self._gex_adata is not None:
@@ -234,14 +235,15 @@ class TDIResult:
         :param gex_adata_path: the path to load the gex data
         """
         data = sc.read_h5ad(os.path.join(save_path, 'cluster_data.h5ad'))
-        data.obs["TCRab"] = list(
-            map(
-                lambda x: list(
-                    map(lambda z: TCR.from_string(z), filter(lambda tcr: tcr != '-', x.split(",")))
-                ),
-                data.obs["TCRab"],
+        if type(data.obs['TCRab'].iloc[0]) == str:
+            data.obs["TCRab"] = list(
+                map(
+                    lambda x: list(
+                        map(lambda z: TCR.from_string(z), filter(lambda tcr: tcr != '-', x.split(",")))
+                    ),
+                    data.obs["TCRab"],
+                )
             )
-        )
         tcr_df = None
         if os.path.exists(os.path.join(save_path, 'tcr_data.parquet')):
             tcr_df = pd.read_parquet(os.path.join(save_path, 'tcr_data.parquet'))

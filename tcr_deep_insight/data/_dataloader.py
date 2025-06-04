@@ -26,7 +26,7 @@ def human_gex_reference_v2():
     else:
         import subprocess
         result = subprocess.run(
-            ["curl", "-L", "-o", default_path, f"https://zenodo.org/record/{zenodo_accession}/files/human_gex_reference_v2.h5ad?download=1"],
+            ["curl", "-L", "-o", default_path, f"https://zenodo.org/records/{zenodo_accession}/files/human_gex_reference_v2.h5ad?download=1"],
             check=True
         )
         if result.returncode == 0:
@@ -47,7 +47,7 @@ def human_tcr_reference_v2():
         return sc.read_h5ad(default_path)
     else:
         result = subprocess.run(
-            ["curl", "-L", "-o", default_path, f"https://zenodo.org/record/{zenodo_accession}/files/human_tcr_reference_v2.h5ad?download=1"],
+            ["curl", "-L", "-o", default_path, f"https://zenodo.org/records/{zenodo_accession}/files/human_tcr_reference_v2.h5ad?download=1"],
             check=True
         )
         if result.returncode == 0:
@@ -95,9 +95,9 @@ def download_model_weights():
     Download the pretrained weights for the TCR-DeepInsight model. 
     """
     urls = [
-        f"https://zenodo.org/record/{zenodo_accession}/files/human_gex_reference_v2.scatlasvae.ckpt?download=1",
-        f"https://zenodo.org/record/{zenodo_accession}/files/human_bert_pseudosequence.tcr_v2.ckpt?download=1",
-        f"https://zenodo.org/record/{zenodo_accession}/files/human_bert_pseudosequence_pca.tcr_v2.pkl?download=1"
+        f"https://zenodo.org/records/{zenodo_accession}/files/human_gex_reference_v2.scatlasvae.ckpt?download=1",
+        f"https://zenodo.org/records/{zenodo_accession}/files/human_bert_pseudosequence.tcr_v2.ckpt?download=1",
+        f"https://zenodo.org/records/{zenodo_accession}/files/human_bert_pseudosequence_pca.tcr_v2.pkl?download=1"
     ]
 
     paths = [

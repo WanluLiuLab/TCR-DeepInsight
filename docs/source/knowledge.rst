@@ -10,6 +10,9 @@ Integrating both TCR and GEX information
 
 **mvTCR** :cite:`Drost2024` is a computational method that integrates TCR and GEX data to identify TCRs that are associated with a specific phenotype. mvTCR uses a multi-view learning approach to model the relationship between TCRs and GEX profiles. The method learns a joint representation of TCRs and GEX profiles that captures the relationship between the two data modalities. mvTCR then uses the joint representation to predict the phenotype of new TCRs based on their GEX profiles.
 
+**scNAT**: :cite:`Lai2024`
+
+**MIST** :cite:`Zhu2023`
 
 Clustering and similarity search for TCRs
 ----------------------------------------

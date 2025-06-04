@@ -47,8 +47,8 @@ In IPython, simply import the package to get started:
     
 For more details, please refer to the :doc:`tutorial`.
 
-Example dataset
----------------
+Example datasets
+----------------
 
 .. warning::
    TCR-DeepInsight require AnnData objects as input.
@@ -63,3 +63,16 @@ or you can use the following code to download the example dataset:
   import tcr_deep_insight as tdi
   gex_adata = tdi.data.human_gex_reference_v2()
   tcr_adata = tdi.data.human_tcr_reference_v2()
+
+Pretrained models
+-----------------
+
+Pretrained models are available at `Zenodo <https://zenodo.org/records/12741480>`_.
+
+or you can use the following code to download the pretrained model:
+
+.. code-block::
+  :linenos:
+
+  import tcr_deep_insight as tdi
+  tdi.data.download_model_weights()
