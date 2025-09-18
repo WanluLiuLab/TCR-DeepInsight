@@ -34,6 +34,15 @@ The documentation for TCR-DeepInsight is available at [ReadTheDocs](https://tcr-
 
 ```shell
 pip install tcr-deep-insight
+pip install faiss-cpu # for CPU version
+pip install faiss-gpu # for GPU version
+```
+
+or you can install cpu or gpu version by
+
+```shell
+pip install "tcr-deep-insight[gpu]"
+pip install "tcr-deep-insight[cpu]"
 ```
 
 ### Install by source code
