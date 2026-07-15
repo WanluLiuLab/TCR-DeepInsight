@@ -85,3 +85,7 @@ For detailed usage, Please see the [Documentation for TCR-DeepInsight](https://t
 ## License
 
 This project is licensed under the BSD 3-Clause License.
+
+## Cite
+
+> If you use TCR-DeepInsight or the reference datasets, please cite: Xue, Z. et al. A pan-disease and population-level single-cell TCRαβ repertoire reference. Cell Discovery 11, 82 (2025). https://doi.org/10.1038/s41421-025-00836-7
